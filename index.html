@@ -6,26 +6,32 @@
   <title>工具箱 | Personal Toolbox</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --card-border: #334155;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --primary: #38bdf8;
-      --tag-bg: #334155;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --card-hover-border: #3b82f6;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --tag-bg: #eff6ff;
+      --tag-text: #1d4ed8;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg);
-      color: var(--text);
-      padding: 2rem 1rem;
+      color: var(--text-main);
+      padding: 2.5rem 1rem;
       min-height: 100vh;
+      line-height: 1.5;
     }
 
     .container {
-      max-width: 900px;
+      max-width: 960px;
       margin: 0 auto;
     }
 
@@ -35,17 +41,16 @@
     }
 
     header h1 {
-      font-size: 2.2rem;
-      font-weight: 700;
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
       margin-bottom: 0.5rem;
-      background: linear-gradient(90deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--text-main);
     }
 
     header p {
       color: var(--text-muted);
-      font-size: 1rem;
+      font-size: 1.05rem;
     }
 
     .search-bar {
@@ -61,20 +66,22 @@
       border-radius: 9999px;
       border: 1px solid var(--card-border);
       background-color: var(--card-bg);
-      color: var(--text);
-      font-size: 1rem;
+      color: var(--text-main);
+      font-size: 0.95rem;
       outline: none;
-      transition: border-color 0.2s;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.2s ease;
     }
 
     .search-bar input:focus {
       border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
     }
 
     .card {
@@ -87,24 +94,27 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      transition: transform 0.2s, border-color 0.2s;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
     .card:hover {
-      transform: translateY(-4px);
-      border-color: var(--primary);
+      transform: translateY(-3px);
+      border-color: var(--card-hover-border);
+      box-shadow: var(--shadow-hover);
     }
 
     .card h2 {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
+      font-weight: 600;
       margin-bottom: 0.5rem;
-      color: #fff;
+      color: var(--text-main);
     }
 
     .card p {
       color: var(--text-muted);
-      font-size: 0.9rem;
-      line-height: 1.4;
+      font-size: 0.875rem;
+      line-height: 1.5;
       flex-grow: 1;
       margin-bottom: 1rem;
     }
@@ -117,10 +127,11 @@
 
     .tag {
       font-size: 0.75rem;
+      font-weight: 500;
       background-color: var(--tag-bg);
-      color: #cbd5e1;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
+      color: var(--tag-text);
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
     }
 
     .empty-state {
@@ -128,18 +139,19 @@
       color: var(--text-muted);
       grid-column: 1 / -1;
       padding: 3rem 0;
+      font-size: 0.95rem;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>工具總覽 Portal</h1>
-      <p>點選下方卡片開啟對應的小工具或實驗專案</p>
+      <h1>工具箱 Portal</h1>
+      <p>點選卡片開啟各項工具或專案</p>
     </header>
 
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="搜尋工具名稱或關鍵字..." />
+      <input type="text" id="searchInput" placeholder="搜尋工具名稱、描述或標籤..." />
     </div>
 
     <main class="grid" id="toolsGrid">
@@ -148,19 +160,19 @@
   </div>
 
   <script>
-    // 未來要擴充小工具，只需在此陣列新增物件即可
+    // 未來擴充工具，在此陣列新增物件即可
     const tools = [
       {
-        title: "範例工具 A",
-        desc: "這是一個簡易的文字轉換或數據計算工具。",
-        path: "tools/tool-a/index.html",
-        tags: ["Text", "Utility"]
+        title: "影像標註工具",
+        desc: "支援框選、標記與圖片前處理操作的輕量標註工具。",
+        path: "tools/image-labeler.html",
+        tags: ["Vision", "Labeling", "Dataset"]
       },
       {
-        title: "範例工具 B",
-        desc: "測試圖表可視化或硬體參數計算器。",
-        path: "tools/tool-b/index.html",
-        tags: ["Hardware", "Calculator"]
+        title: "範例硬體計算器",
+        desc: "電阻分壓、濾波截止頻率與常用元件參數估算。",
+        path: "#",
+        tags: ["Hardware", "EE"]
       }
     ];
 
@@ -178,7 +190,7 @@
       );
 
       if (filtered.length === 0) {
-        grid.innerHTML = `<div class="empty-state">查無符合的工具</div>`;
+        grid.innerHTML = `<div class="empty-state">查無符合條件的工具</div>`;
         return;
       }
 
@@ -203,7 +215,6 @@
       renderTools(e.target.value);
     });
 
-    // 初始渲染
     renderTools();
   </script>
 </body>

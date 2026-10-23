@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>吃飯 🐧🍴</title>
+  <!-- 引入 Tenor 嵌入腳本 -->
+  <script type="text/javascript" async src="https://tenor.com/embed.js"></script>
+  <!-- 引入慶祝紙花特效庫 -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* 💖 全局粉紅色系背景 */
+    body {
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #ffccd5 0%, #ffb3c1 50%, #ff8fa3 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow-x: hidden;
+      padding: 20px;
+    }
+
+    /* 背景漂浮小元素 */
+    .bg-item {
+      position: fixed;
+      top: -10vh;
+      font-size: 24px;
+      user-select: none;
+      pointer-events: none;
+      animation: floatDown linear infinite;
+    }
+
+    @keyframes floatDown {
+      0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(110vh) rotate(360deg); opacity: 0.2; }
+    }
+
+    /* 主卡片樣式 */
+    .card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      padding: 28px 20px;
+      border-radius: 28px;
+      box-shadow: 0 16px 35px rgba(255, 77, 109, 0.25);
+      text-align: center;
+      max-width: 400px;
+      width: 100%;
+      position: relative;
+      z-index: 10;
+      border: 3px solid #ffccd5;
+      transition: all 0.3s ease;
+    }
+
+    /* Pingu 容器 */
+    .pingu-container {
+      width: 100%;
+      margin-bottom: 15px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #fff0f3;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    h1 {
+      color: #ff4d6d;
+      font-size: 1.45rem;
+      margin-bottom: 10px;
+      line-height: 1.35;
+    }
+
+    p {
+      color: #594a4e;
+      font-size: 1rem;
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+
+    /* 按鈕區域 */
+    .btn-group {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      min-height: 80px;
+      position: relative;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 1.05rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      user-select: none;
+    }
+
+    .btn-yes {
+      background: linear-gradient(135deg, #ff4d6d, #ff758f);
+      color: #fff;
+      z-index: 20;
+      transform-origin: center center;
+    }
+
+    .btn-no {
+      background: #f8f9fa;
+      color: #888;
+      transform-origin: center center;
+    }
+
+    /* 傲嬌搞笑彈窗 */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background: #ffffff;
+      padding: 25px 20px;
+      border-radius: 24px;
+      max-width: 320px;
+      width: 85%;
+      text-align: center;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      transform: scale(0.8);
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      border: 3px solid #ffccd5;
+    }
+
+    .modal-overlay.active .modal-box {
+      transform: scale(1);
+    }
+
+    .modal-box h3 {
+      color: #ff4d6d;
+      font-size: 1.25rem;
+      margin-bottom: 8px;
+    }
+
+    .modal-box p {
+      color: #594a4e;
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+
+    .modal-btn {
+      background: #ff758f;
+      color: #fff;
+      font-weight: bold;
+      padding: 10px 22px;
+      font-size: 0.95rem;
+    }
+
+    /* 日期選擇器 */
+    .date-wrapper {
+      margin: 20px 0;
+    }
+
+    input[type="date"] {
+      padding: 12px 18px;
+      font-size: 1.15rem;
+      border: 2px solid #ff758f;
+      border-radius: 16px;
+      outline: none;
+      color: #ff4d6d;
+      background: #fff0f3;
+      font-weight: bold;
+      width: 100%;
+      text-align: center;
+    }
+
+    /* 截圖提醒專區 */
+    .screenshot-card {
+      background: #fff0f3;
+      border: 2.5px dashed #ff4d6d;
+      padding: 16px;
+      border-radius: 18px;
+      margin: 15px 0;
+    }
+
+    .date-highlight {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #ff4d6d;
+      margin: 8px 0;
+    }
+
+    .screenshot-alert {
+      color: #ff4d6d;
+      font-weight: 800;
+      font-size: 1.15rem;
+      animation: alertPulse 1.2s infinite;
+      line-height: 1.4;
+    }
+
+    @keyframes alertPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.05); opacity: 0.9; }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================= 步驟 1：主畫面 (第 1 張 Pingu) ================= -->
+  <div class="card" id="step1">
+    <div class="pingu-container">
+      <div class="tenor-gif-embed" data-postid="1391757012970669694" data-share-method="host" data-aspect-ratio="1.36066" data-width="100%">
+        <a href="https://tenor.com/view/pingu-angry-dad-pingu-eating-dinner-pingu-dinner-pingu-dad-dad-at-dinner-table-gif-1391757012970669694">Pingu Angry Dad Pingu Eating Dinner GIF</a>from <a href="https://tenor.com/search/pingu+angry+dad-gifs">Pingu Angry Dad GIFs</a>
+      </div>
+    </div>
+    <h1 id="titleStep1"></h1>
+    <p id="descStep1"></p>
+
+    <div class="btn-group">
+      <button class="btn-yes" id="yesBtn" onclick="goToStep2()"></button>
+      <button class="btn-no" id="noBtn" onclick="handleNoClick()"></button>
+    </div>
+  </div>
+
+  <!-- ================= 步驟 2：選擇日期 (第 2 張 Pingu) ================= -->
+  <div class="card hidden" id="step2">
+    <div class="pingu-container">
+      <div class="tenor-gif-embed" data-postid="19485775" data-share-method="host" data-aspect-ratio="1.30612" data-width="100%">
+        <a href="https://tenor.com/view/pingu-paura-scared-afraid-agitato-gif-19485775">Pingu Paura GIF</a>from <a href="https://tenor.com/search/pingu-gifs">Pingu GIFs</a>
+      </div>
+    </div>
+    <h1 id="titleStep2"></h1>
+    <p id="descStep2"></p>
+
+    <div class="date-wrapper">
+      <input type="date" id="dateInput" />
+    </div>
+
+    <button class="btn-yes" id="btnConfirmDate" style="width: 100%;" onclick="confirmDate()"></button>
+  </div>
+
+  <!-- ================= 步驟 3：截圖確認畫面 (第 3 張 Pingu) ================= -->
+  <div class="card hidden" id="step3">
+    <div class="pingu-container">
+      <div class="tenor-gif-embed" data-postid="26965825" data-share-method="host" data-aspect-ratio="1.34454" data-width="100%">
+        <a href="https://tenor.com/view/pingu-gif-26965825">Pingu GIF</a>from <a href="https://tenor.com/search/pingu-gifs">Pingu GIFs</a>
+      </div>
+    </div>
+    <h1 id="titleStep3"></h1>
+    <p id="descStep3"></p>
+
+    <div class="screenshot-card">
+      <p style="font-size: 0.9rem; color: #888;" id="labelFinalDate"></p>
+      <div class="date-highlight" id="finalDateText"></div>
+    </div>
+
+    <p class="screenshot-alert" id="descScreenshotAlert"></p>
+  </div>
+
+  <!-- ================= 傲嬌搞笑彈窗 ================= -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal-box">
+      <h3 id="modalTitle"></h3>
+      <p id="modalMsg"></p>
+      <button class="modal-btn" id="modalBtnText" onclick="closeModal()"></button>
+    </div>
+  </div>
+
+  <script>
+    /* 
+    ==============================================================
+    🛠️ 【已整合你的自訂文字】
+    ==============================================================
+    */
+    const CONFIG = {
+      // 步驟 1：主畫面（搭配生氣敲桌子 Pingu）
+      step1: {
+        title: "📢 敲桌！晚上要不要吃個飯！",
+        desc: "🍴<br />難得我下班可以遇到泥，這機會難得欸<br />妳要跟我去吃飯嗎？",
+        btnYes: "好！吃！",
+        btnNo: "不要 "
+      },
+
+      // 步驟 2：選日期畫面（搭配緊張等答案 Pingu）
+      step2: {
+        title: "什麼時候有空",
+        desc: "選一天妳有空的日期！<br />",
+        btnSubmit: "這是一個大大大日子📆"
+      },
+
+      // 步驟 3：截圖確認畫面（搭配開心打滾 Pingu）
+      step3: {
+        title: "🎉 預約成功！",
+        desc: "記得早起上班早早下班，我們去吃好吃的",
+        dateLabel: "📅 預定開吃日期",
+        screenshotAlert: "請立刻【截圖】回傳給我！<br />"
+      },
+
+      // 彈窗關閉按鈕文字
+      modalBtnText: "好啦...我再想想 🐧",
+
+      // 點「不要」時依序跳出的 5 次搞笑彈窗對話
+      dialogs: [
+        {
+          title: "真的不考慮一下嗎？🥺",
+          msg: "我會幫妳剝蝦🦐"
+        },
+        {
+          title: "欸不是！不要按這麼快！😱",
+          msg: "我會吃青椒欸！認真"
+        },
+        {
+          title: "咦咦，不是吧",
+          msg: "我只是想找你吃飯。好難"
+        },
+        {
+          title: "再拒絕我要生氣喔",
+          msg: "zzzzzzzzz"
+        },
+        {
+          title: "最後警告：拒絕鍵快被捏碎了！😈",
+          msg: "妳看！「不要」按鈕已經被縮到看不見了，認命點「好啦」吧！"
+        }
+      ]
+    };
+    /* ============================================================== */
+
+    // 初始化將設定文字填入頁面
+    function initContent() {
+      // Step 1
+      document.getElementById('titleStep1').innerHTML = CONFIG.step1.title;
+      document.getElementById('descStep1').innerHTML = CONFIG.step1.desc;
+      document.getElementById('yesBtn').innerText = CONFIG.step1.btnYes;
+      document.getElementById('noBtn').innerText = CONFIG.step1.btnNo;
+
+      // Step 2
+      document.getElementById('titleStep2').innerHTML = CONFIG.step2.title;
+      document.getElementById('descStep2').innerHTML = CONFIG.step2.desc;
+      document.getElementById('btnConfirmDate').innerText = CONFIG.step2.btnSubmit;
+
+      // Step 3
+      document.getElementById('titleStep3').innerHTML = CONFIG.step3.title;
+      document.getElementById('descStep3').innerHTML = CONFIG.step3.desc;
+      document.getElementById('labelFinalDate').innerText = CONFIG.step3.dateLabel;
+      document.getElementById('descScreenshotAlert').innerHTML = CONFIG.step3.screenshotAlert;
+
+      // Modal
+      document.getElementById('modalBtnText').innerText = CONFIG.modalBtnText;
+    }
+    initContent();
+
+    // 漂浮小裝飾
+    function createFloatingItems() {
+      const icons = ['💖', '🍞', '🍕', '🌸', '🐧', '✨', '🦐'];
+      for (let i = 0; i < 16; i++) {
+        const item = document.createElement('div');
+        item.className = 'bg-item';
+        item.innerText = icons[Math.floor(Math.random() * icons.length)];
+        item.style.left = Math.random() * 100 + 'vw';
+        item.style.animationDuration = (Math.random() * 3 + 4) + 's';
+        item.style.animationDelay = (Math.random() * 4) + 's';
+        item.style.fontSize = (Math.random() * 12 + 18) + 'px';
+        document.body.appendChild(item);
+      }
+    }
+    createFloatingItems();
+
+    // 限制日期不能選過去
+    const dateInput = document.getElementById('dateInput');
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.min = today;
+    dateInput.value = today;
+
+    let noCount = 0;
+    let yesScale = 1.0;
+    let noScale = 1.0;
+
+    function handleNoClick() {
+      const modal = document.getElementById('modal');
+      const modalTitle = document.getElementById('modalTitle');
+      const modalMsg = document.getElementById('modalMsg');
+      const yesBtn = document.getElementById('yesBtn');
+      const noBtn = document.getElementById('noBtn');
+
+      // 同意按鈕變大，拒絕按鈕變小
+      yesScale += 0.25;
+      noScale = Math.max(0.3, noScale - 0.15);
+
+      yesBtn.style.transform = `scale(${yesScale})`;
+      noBtn.style.transform = `scale(${noScale})`;
+
+      // 5 次彈窗對話循環
+      if (noCount < CONFIG.dialogs.length) {
+        modalTitle.innerText = CONFIG.dialogs[noCount].title;
+        modalMsg.innerText = CONFIG.dialogs[noCount].msg;
+        noCount++;
+      } else {
+        modalTitle.innerText = "🚨 系統已自動幫妳同意！";
+        modalMsg.innerText = "拒絕無效！走啦去吃好吃的！";
+        noBtn.innerText = "好啦❤️";
+        noBtn.onclick = goToStep2;
+      }
+
+      modal.classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+    }
+
+    function goToStep2() {
+      closeModal();
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('step2').classList.remove('hidden');
+      // 觸發 Tenor 腳本重新渲染
+      if (window.tenor && window.tenor.embed) {
+        window.tenor.embed.init();
+      }
+    }
+
+    function confirmDate() {
+      const selected = document.getElementById('dateInput').value;
+      if (!selected) {
+        alert("挑一天嘛！不要留白啦～");
+        return;
+      }
+
+      const parts = selected.split('-');
+      const formatted = `${parts[0]} 年 ${parts[1]} 月 ${parts[2]} 日`;
+      document.getElementById('finalDateText').innerText = formatted;
+
+      document.getElementById('step2').classList.add('hidden');
+      document.getElementById('step3').classList.remove('hidden');
+
+      // 觸發 Tenor 腳本重新渲染
+      if (window.tenor && window.tenor.embed) {
+        window.tenor.embed.init();
+      }
+
+      // 噴灑慶祝彩帶
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+      setTimeout(() => {
+        confetti({ particleCount: 60, angle: 60, spread: 60, origin: { x: 0 } });
+        confetti({ particleCount: 60, angle: 120, spread: 60, origin: { x: 1 } });
+      }, 300);
+    }
+  </script>
+</body>
+</html>
