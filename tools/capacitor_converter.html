@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>電容換算工具</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1b2437; --muted:#6b7690; --line:#e4e8f1;
+    --accent:#3b6cf6; --accent-soft:#eaf0ff; --ok:#12a37f; --warn:#e5890a;
+    --radius:18px; --shadow:0 10px 30px rgba(40,60,120,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+    background:radial-gradient(1200px 500px at 50% -10%,#e3ebff 0%,var(--bg) 60%);
+    padding:32px 16px 60px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  header{margin-bottom:22px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:.3px}
+  header p{margin:0;color:var(--muted);font-size:14px}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;margin-bottom:18px;border:1px solid var(--line)}
+  .card h2{font-size:15px;margin:0 0 14px;color:var(--muted);font-weight:600;letter-spacing:.5px}
+
+  .input-row{display:flex;gap:10px;flex-wrap:wrap}
+  .input-row input{
+    flex:1 1 200px;min-width:0;font-size:30px;font-weight:600;padding:12px 16px;border-radius:14px;
+    border:2px solid var(--line);outline:none;color:var(--ink);background:#fbfcff;transition:.15s;
+  }
+  .input-row input:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px var(--accent-soft)}
+  .seg{display:flex;background:#eef1f8;border-radius:14px;padding:4px;gap:2px}
+  .seg button{
+    border:0;background:transparent;font:inherit;font-weight:600;font-size:15px;color:var(--muted);
+    padding:10px 14px;border-radius:11px;cursor:pointer;transition:.15s;
+  }
+  .seg button.on{background:#fff;color:var(--accent);box-shadow:0 2px 8px rgba(40,60,120,.12)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .chip{
+    border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-size:13px;
+    padding:6px 12px;border-radius:999px;cursor:pointer;transition:.15s;
+  }
+  .chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .res{
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;background:#fcfdff;
+    transition:.15s;position:relative;
+  }
+  .res:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 6px 16px rgba(59,108,246,.12)}
+  .res.src{background:var(--accent-soft);border-color:#c6d6ff}
+  .res .u{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.5px}
+  .res .v{font-size:22px;font-weight:700;margin-top:2px;word-break:break-all}
+  .best{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;
+    background:linear-gradient(135deg,#3b6cf6,#6c8cff);color:#fff;border-radius:14px;padding:16px 20px;
+  }
+  .best small{opacity:.85;font-size:12px;display:block;margin-bottom:2px}
+  .best b{font-size:28px}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:620px){.two{grid-template-columns:1fr}}
+  .sub{border:1px solid var(--line);border-radius:14px;padding:16px;background:#fcfdff}
+  .sub h3{margin:0 0 10px;font-size:14px}
+  .sub input{
+    width:100%;font-size:20px;font-weight:600;padding:10px 14px;border-radius:12px;border:2px solid var(--line);
+    outline:none;background:#fff;text-transform:uppercase;
+  }
+  .sub input:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .out{margin-top:12px;font-size:15px;line-height:1.7;min-height:48px}
+  .out b{font-size:22px;color:var(--accent)}
+  .tag{display:inline-block;background:#e6f7f2;color:var(--ok);border-radius:8px;padding:1px 8px;font-size:12px;font-weight:600}
+  .tag.warn{background:#fff3df;color:var(--warn)}
+  .muted{color:var(--muted);font-size:13px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--muted);font-weight:600}
+  #toast{
+    position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:#1b2437;color:#fff;
+    padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>電容換算工具</h1>
+    <p>F / mF / µF / nF / pF 即時互換，並支援 EIA 電容代碼（如 104、4R7）</p>
+  </header>
+
+  <section class="card">
+    <h2>輸入電容值</h2>
+    <div class="input-row">
+      <input id="val" type="number" step="any" inputmode="decimal" value="100" aria-label="電容值">
+      <div class="seg" id="unitSeg"></div>
+    </div>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="card">
+    <h2>換算結果（點擊卡片可複製）</h2>
+    <div class="best"><div><small>最佳顯示</small><b id="best">—</b></div><span class="muted" style="color:#fff;opacity:.85" id="bestSub"></span></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>電容代碼 (EIA Code)</h2>
+    <div class="two">
+      <div class="sub">
+        <h3>代碼 → 電容值</h3>
+        <input id="code" placeholder="例如 104K、4R7、223" value="104K" maxlength="5">
+        <div class="out" id="decodeOut"></div>
+      </div>
+      <div class="sub">
+        <h3>目前輸入值 → 代碼</h3>
+        <div class="out" id="encodeOut" style="margin-top:0"></div>
+      </div>
+    </div>
+    <details style="margin-top:14px">
+      <summary class="muted" style="cursor:pointer">代碼規則與誤差字母</summary>
+      <p class="muted">前兩碼為有效數字，第三碼為 10 的次方，單位 pF（104 = 10×10⁴ pF = 100 nF）。小於 10 pF 以 R 代表小數點（4R7 = 4.7 pF）。</p>
+      <table>
+        <tr><th>字母</th><th>B</th><th>C</th><th>D</th><th>F</th><th>G</th><th>J</th><th>K</th><th>M</th><th>Z</th></tr>
+        <tr><th>誤差</th><td>±0.1pF</td><td>±0.25pF</td><td>±0.5pF</td><td>±1%</td><td>±2%</td><td>±5%</td><td>±10%</td><td>±20%</td><td>−20/+80%</td></tr>
+      </table>
+    </details>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+  // 以 pF 為基準，避免浮點誤差
+  const UNITS = [
+    {k:'F',  pf:1e12},
+    {k:'mF', pf:1e9},
+    {k:'µF', pf:1e6},
+    {k:'nF', pf:1e3},
+    {k:'pF', pf:1},
+  ];
+  const PRESETS = [['10 pF',10,'pF'],['100 pF',100,'pF'],['1 nF',1,'nF'],['10 nF',10,'nF'],['100 nF',100,'nF'],
+                   ['1 µF',1,'µF'],['10 µF',10,'µF'],['47 µF',47,'µF'],['100 µF',100,'µF'],['1000 µF',1000,'µF']];
+  const TOL = {B:'±0.1 pF',C:'±0.25 pF',D:'±0.5 pF',F:'±1%',G:'±2%',J:'±5%',K:'±10%',M:'±20%',Z:'−20% / +80%'};
+
+  const $ = id => document.getElementById(id);
+  let unit = 'nF';
+
+  const fmt = (x, d = 6) => Number(x).toLocaleString('en-US', {maximumSignificantDigits: d, useGrouping: true});
+
+  function bestUnit(pf){
+    for (const u of UNITS) if (pf / u.pf >= 1) return u;
+    return UNITS[UNITS.length - 1];
+  }
+
+  // UI 建構
+  UNITS.forEach(u => {
+    const b = document.createElement('button');
+    b.textContent = u.k; b.dataset.k = u.k;
+    b.onclick = () => { unit = u.k; render(); };
+    $('unitSeg').appendChild(b);
+  });
+  PRESETS.forEach(([t, v, u]) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.textContent = t;
+    b.onclick = () => { $('val').value = v; unit = u; render(); };
+    $('chips').appendChild(b);
+  });
+
+  function toast(msg){
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1400);
+  }
+  function copy(text){
+    const done = () => toast('已複製：' + text);
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => toast(text));
+    else toast(text);
+  }
+
+  function encodeCode(pf){
+    if (!(pf > 0)) return null;
+    let code, exact;
+    if (pf < 10){
+      const m = Math.round(pf * 10);
+      const s = String(m).padStart(2, '0');
+      code = s[0] + 'R' + s[1];
+      exact = Math.abs(m / 10 - pf) < pf * 1e-9;
+    } else {
+      let e = Math.floor(Math.log10(pf)) - 1;
+      let m = Math.round(pf / Math.pow(10, e));
+      if (m === 100){ m = 10; e++; }
+      if (e > 9) return {code:null};
+      code = String(m) + e;
+      exact = Math.abs(m * Math.pow(10, e) - pf) < pf * 1e-9;
+    }
+    return {code, exact};
+  }
+
+  function decodeCode(raw){
+    const s = raw.trim().toUpperCase();
+    let m = s.match(/^(\d)R(\d)([A-Z])?$/);
+    if (m) return {pf: parseFloat(m[1] + '.' + m[2]), tol: m[3]};
+    m = s.match(/^(\d{2})(\d)([A-Z])?$/);
+    if (m){
+      return {pf: parseInt(m[1], 10) * Math.pow(10, parseInt(m[2], 10)), tol: m[3]};
+    }
+    return null;
+  }
+
+  function render(){
+    document.querySelectorAll('#unitSeg button').forEach(b => b.classList.toggle('on', b.dataset.k === unit));
+    const v = parseFloat($('val').value);
+    const u = UNITS.find(x => x.k === unit);
+    const grid = $('grid'); grid.innerHTML = '';
+
+    if (!isFinite(v) || v < 0){
+      $('best').textContent = '—'; $('bestSub').textContent = '請輸入有效的正數';
+      $('encodeOut').innerHTML = '<span class="muted">—</span>';
+      return;
+    }
+    const pf = v * u.pf;
+    const bu = bestUnit(pf || 1);
+    $('best').textContent = pf === 0 ? '0 pF' : fmt(pf / bu.pf) + ' ' + bu.k;
+    $('bestSub').textContent = pf === 0 ? '' : '= ' + fmt(pf) + ' pF';
+
+    UNITS.forEach(x => {
+      const text = fmt(pf / x.pf);
+      const d = document.createElement('div');
+      d.className = 'res' + (x.k === unit ? ' src' : '');
+      d.innerHTML = `<div class="u">${x.k}</div><div class="v">${text}</div>`;
+      d.onclick = () => copy(text);
+      grid.appendChild(d);
+    });
+
+    const enc = pf > 0 ? encodeCode(pf) : null;
+    if (!enc || !enc.code){
+      $('encodeOut').innerHTML = '<span class="muted">此數值無法以 3 碼表示</span>';
+    } else {
+      $('encodeOut').innerHTML = `<b>${enc.code}</b> ` +
+        (enc.exact ? '<span class="tag">精確</span>' : '<span class="tag warn">近似值</span>') +
+        `<div class="muted">${fmt(pf)} pF → 代碼 ${enc.code}</div>`;
+    }
+  }
+
+  function renderDecode(){
+    const r = decodeCode($('code').value);
+    const out = $('decodeOut');
+    if (!$('code').value.trim()){ out.innerHTML = '<span class="muted">輸入 3 碼代碼</span>'; return; }
+    if (!r){ out.innerHTML = '<span class="muted">格式不正確（例：104、223K、4R7）</span>'; return; }
+    const bu = bestUnit(r.pf || 1);
+    out.innerHTML = `<b>${fmt(r.pf / bu.pf)} ${bu.k}</b><div class="muted">= ${fmt(r.pf)} pF = ${fmt(r.pf/1e3)} nF = ${fmt(r.pf/1e6)} µF</div>` +
+      (r.tol ? `<div>誤差：${TOL[r.tol] || '未知 (' + r.tol + ')'}</div>` : '');
+    out.onclick = () => { $('val').value = r.pf / bu.pf; unit = bu.k; render(); toast('已帶入上方輸入'); };
+    out.style.cursor = 'pointer';
+  }
+
+  $('val').addEventListener('input', render);
+  $('code').addEventListener('input', renderDecode);
+  render(); renderDecode();
+</script>
+</body>
+</html>
