@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>工具箱 | Personal Toolbox</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --tag-bg: #334155;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 2rem 1rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+
+    .search-bar {
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    .search-bar input {
+      width: 100%;
+      max-width: 480px;
+      padding: 0.75rem 1.25rem;
+      border-radius: 9999px;
+      border: 1px solid var(--card-border);
+      background-color: var(--card-bg);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-bar input:focus {
+      border-color: var(--primary);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary);
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+
+    .card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+      flex-grow: 1;
+      margin-bottom: 1rem;
+    }
+
+    .card .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .tag {
+      font-size: 0.75rem;
+      background-color: var(--tag-bg);
+      color: #cbd5e1;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-muted);
+      grid-column: 1 / -1;
+      padding: 3rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>工具總覽 Portal</h1>
+      <p>點選下方卡片開啟對應的小工具或實驗專案</p>
+    </header>
+
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="搜尋工具名稱或關鍵字..." />
+    </div>
+
+    <main class="grid" id="toolsGrid">
+      <!-- 卡片由 JS 自動生成 -->
+    </main>
+  </div>
+
+  <script>
+    // 未來要擴充小工具，只需在此陣列新增物件即可
+    const tools = [
+      {
+        title: "範例工具 A",
+        desc: "這是一個簡易的文字轉換或數據計算工具。",
+        path: "tools/tool-a/index.html",
+        tags: ["Text", "Utility"]
+      },
+      {
+        title: "範例工具 B",
+        desc: "測試圖表可視化或硬體參數計算器。",
+        path: "tools/tool-b/index.html",
+        tags: ["Hardware", "Calculator"]
+      }
+    ];
+
+    const grid = document.getElementById("toolsGrid");
+    const searchInput = document.getElementById("searchInput");
+
+    function renderTools(filterText = "") {
+      grid.innerHTML = "";
+      const lowerFilter = filterText.toLowerCase();
+
+      const filtered = tools.filter(t => 
+        t.title.toLowerCase().includes(lowerFilter) ||
+        t.desc.toLowerCase().includes(lowerFilter) ||
+        t.tags.some(tag => tag.toLowerCase().includes(lowerFilter))
+      );
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="empty-state">查無符合的工具</div>`;
+        return;
+      }
+
+      filtered.forEach(tool => {
+        const card = document.createElement("a");
+        card.href = tool.path;
+        card.className = "card";
+        card.innerHTML = `
+          <div>
+            <h2>${tool.title}</h2>
+            <p>${tool.desc}</p>
+          </div>
+          <div class="tags">
+            ${tool.tags.map(tag => `<span class="tag">${tag}</span>`).join("")}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    searchInput.addEventListener("input", (e) => {
+      renderTools(e.target.value);
+    });
+
+    // 初始渲染
+    renderTools();
+  </script>
+</body>
+</html>
