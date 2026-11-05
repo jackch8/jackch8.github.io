@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BOM to XLSX Converter</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+*{
+    box-sizing:border-box;
+    font-family:"Segoe UI",sans-serif;
+}
+
+body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:linear-gradient(135deg,#e0f2ff,#f8fbff);
+}
+
+.container{
+    width:600px;
+    background:white;
+    border-radius:20px;
+    padding:40px;
+    box-shadow:0 10px 30px rgba(0,0,0,.1);
+}
+
+h1{
+    margin-top:0;
+    text-align:center;
+    color:#2563eb;
+}
+
+.drop-zone{
+    border:3px dashed #60a5fa;
+    border-radius:16px;
+    padding:50px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:.2s;
+    background:#f8fbff;
+}
+
+.drop-zone:hover{
+    background:#eef6ff;
+}
+
+.drop-zone.dragover{
+    border-color:#2563eb;
+    background:#dbeafe;
+}
+
+.icon{
+    font-size:48px;
+}
+
+.text{
+    margin-top:10px;
+    color:#555;
+}
+
+.filename{
+    margin-top:15px;
+    color:#2563eb;
+    font-weight:600;
+    word-break:break-all;
+}
+
+button{
+    margin-top:25px;
+    width:100%;
+    height:50px;
+    border:none;
+    border-radius:12px;
+    background:#2563eb;
+    color:white;
+    font-size:16px;
+    font-weight:600;
+    cursor:pointer;
+    transition:.2s;
+}
+
+button:hover{
+    background:#1d4ed8;
+}
+
+.status{
+    margin-top:15px;
+    text-align:center;
+    color:#10b981;
+    font-weight:600;
+}
+
+#fileInput{
+    display:none;
+}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+
+    <h1>BOM → XLSX Converter</h1>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="icon">📄</div>
+        <div class="text">
+            Drop BOM file here<br>
+            or Click to Select
+        </div>
+
+        <div class="filename" id="filename">
+            No file selected
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" accept=".bom,.txt">
+
+    <button onclick="convert()">
+        Convert to XLSX
+    </button>
+
+    <div class="status" id="status"></div>
+
+</div>
+
+<script>
+
+let selectedFile = null;
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const filename = document.getElementById("filename");
+
+dropZone.addEventListener("click",()=>{
+    fileInput.click();
+});
+
+fileInput.addEventListener("change",(e)=>{
+    selectedFile = e.target.files[0];
+    showFileName();
+});
+
+dropZone.addEventListener("dragover",(e)=>{
+    e.preventDefault();
+    dropZone.classList.add("dragover");
+});
+
+dropZone.addEventListener("dragleave",()=>{
+    dropZone.classList.remove("dragover");
+});
+
+dropZone.addEventListener("drop",(e)=>{
+    e.preventDefault();
+    dropZone.classList.remove("dragover");
+
+    selectedFile = e.dataTransfer.files[0];
+
+    if(selectedFile){
+        fileInput.files = e.dataTransfer.files;
+        showFileName();
+    }
+});
+
+function showFileName(){
+    filename.textContent =
+        selectedFile ? selectedFile.name : "No file selected";
+}
+
+async function convert(){
+
+    if(!selectedFile){
+        alert("Please select BOM file");
+        return;
+    }
+
+    document.getElementById("status").textContent =
+        "Processing...";
+
+    const text = await selectedFile.text();
+
+    const lines = text.split(/\r?\n/);
+
+    const keywords = [
+        "Reference",
+        "Value",
+        "Part Number",
+        "Part Description",
+        "PCB Footprint",
+        "Function Code"
+    ];
+
+    let headerRow = -1;
+
+    for(let i=0;i<lines.length;i++){
+
+        let count = 0;
+
+        keywords.forEach(k=>{
+            if(lines[i].includes(k))
+                count++;
+        });
+
+        if(count >= 4){
+            headerRow = i;
+            break;
+        }
+    }
+
+    if(headerRow < 0){
+        alert("BOM Header Not Found");
+        document.getElementById("status").textContent = "";
+        return;
+    }
+
+    const dataLines = lines.slice(headerRow);
+
+    const data = dataLines.map(
+        line => line.split("\t")
+    );
+
+    const ws =
+        XLSX.utils.aoa_to_sheet(data);
+
+    const wb =
+        XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        "BOM"
+    );
+
+    const outputName =
+        selectedFile.name.replace(
+            /\.[^.]+$/,
+            ""
+        ) + ".xlsx";
+
+    XLSX.writeFile(
+        wb,
+        outputName
+    );
+
+    document.getElementById("status").textContent =
+        "✅ Convert Successful";
+}
+
+</script>
+
+</body>
+</html>
