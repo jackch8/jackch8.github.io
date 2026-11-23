@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoC Stress Viewer</title>
+<style>
+:root{
+  color-scheme:light;   /* 強制亮色，不跟隨系統深色模式 */
+  --bg:#f6f7f9; --panel:#fff; --text:#1f2937; --muted:#6b7280; --grid:#e5e7eb;
+  --axis:#9ca3af; --accent:#2563eb; --mark:#dc2626; --tip:#111827e6; --tiptext:#f9fafb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI","Microsoft JhengHei",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--grid);position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;font-weight:600}
+#fname{color:var(--muted);font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;font-size:13px;line-height:1.2;transition:background .15s,color .15s,box-shadow .15s,transform .05s}
+.btn:hover{background:#1d4ed8;border-color:#1d4ed8;box-shadow:0 1px 4px rgba(37,99,235,.35)}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+.btn.ghost{background:#fff;color:var(--accent);border-color:var(--accent)}
+.btn.ghost:hover{background:#eff6ff;box-shadow:none}
+.btn.sm{padding:3px 11px;font-size:12px;border-radius:5px}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.tools{display:flex;gap:6px}
+.spacer{flex:1}
+main{padding:16px 20px;max-width:1500px;margin:0 auto}
+#drop{border:2px dashed var(--axis);border-radius:10px;padding:48px;text-align:center;color:var(--muted)}
+#drop.over{border-color:var(--accent);color:var(--accent)}
+#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--panel);border-radius:8px;padding:10px 14px;border:1px solid var(--grid)}
+.card .k{color:var(--muted);font-size:12px}
+.card .v{font-size:20px;font-weight:600;margin-top:2px}
+.card .s{color:var(--muted);font-size:12px}
+.chart{background:var(--panel);border:1px solid var(--grid);border-radius:8px;padding:12px 14px 10px;margin-bottom:14px}
+.chart h2{font-size:14px;margin:0;font-weight:600}
+canvas{width:100%;height:270px;display:block;cursor:crosshair;user-select:none}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;font-size:12px}
+.legend.tall{max-height:150px;overflow:auto}
+.chip{display:flex;align-items:center;gap:5px;cursor:pointer;padding:2px 6px;border-radius:4px;user-select:none}
+.chip:hover{background:var(--bg)}
+.chip.off{opacity:.35;text-decoration:line-through}
+.chip i{width:12px;height:3px;border-radius:2px;display:inline-block}
+.chip small{color:var(--muted)}
+.hint{color:var(--muted);font-size:12px;margin:0 0 10px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>SoC Stress Viewer</h1>
+  <span id="fname"></span>
+  <span class="spacer"></span>
+  <button class="btn ghost hidden" id="reset">重設縮放</button>
+  <button class="btn" id="pick">開啟 CSV</button>
+  <input type="file" id="file" accept=".csv,text/csv" class="hidden">
+</header>
+<main>
+  <div id="drop">把 CSV 檔拖曳到這裡，或點右上角「開啟 CSV」</div>
+  <div id="view" class="hidden">
+    <div id="cards"></div>
+    <p class="hint">滑鼠移動查看數值；在圖上按住拖曳可縮放時間範圍（所有圖表同步）；雙擊還原；點圖例可顯示/隱藏曲線；有 <code>stress_running</code> 欄位時，紅色虛線為壓測開始。溫度已由 mC 換算為 °C，DDR 頻寬已由 kB/s 換算為 MB/s；CSV 中的 NA 會自動略過，全部為 NA 的圖表不會顯示。</p>
+    <div id="charts"></div>
+  </div>
+</main>
+
+<script>
+const EMBEDDED=/*__EMBEDDED_CSV__*/null;
+
+const $=s=>document.querySelector(s);
+const PAD={l:58,r:14,t:10,b:26};          // 所有圖表共用的繪圖邊界
+let D=null, charts=[], view=null, hoverT=null, hoverChart=null, sel=null, down=null;
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[]; let row=[], f='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; }
+      else f+=c;
+    }else if(c==='"') q=true;
+    else if(c===','){row.push(f);f='';}
+    else if(c==='\n'){row.push(f);rows.push(row);row=[];f='';}
+    else if(c!=='\r') f+=c;
+  }
+  if(f!==''||row.length){row.push(f);rows.push(row);}
+  return rows;
+}
+
+/* ---------- 載入與欄位正規化 ---------- */
+function load(text,name){
+  const rows=parseCSV(text).filter(r=>r.length>1);
+  if(rows.length<2){alert('CSV 沒有資料');return;}
+  const head=rows.shift().map(h=>h.trim());
+  const n=rows.length;
+  if(n<2){alert('資料筆數不足（至少需要 2 筆）');return;}
+
+  const cols={};
+  head.forEach((h,j)=>{
+    const vals=rows.map(r=>r[j]===undefined?'':r[j].trim());
+    const num=vals.map(v=>(v===''||v==='NA')?NaN:Number(v));
+    cols[h]=num.some(x=>!isNaN(x))?num:vals;   // 全是文字的欄位保留字串（如 iso、ON/OFF）
+  });
+
+  // 時間軸：epoch 轉為相對秒數
+  const t=(cols.epoch&&!isNaN(cols.epoch[0]))
+    ? cols.epoch.map(e=>e-cols.epoch[0])
+    : Array.from({length:n},(_,i)=>i);
+
+  // 溫度：毫攝氏 mC → °C（新欄位名 *_C，原 *_mC 欄位移除）
+  for(const k of Object.keys(cols)){
+    if(k.endsWith('_mC')&&typeof cols[k][0]==='number'){
+      cols[k.slice(0,-3)+'_C']=cols[k].map(v=>v/1000);
+      delete cols[k];
+    }
+  }
+  // DDR 頻寬：kB/s → MB/s
+  const kbToMB=a=>a.map(v=>v/1024);
+  if(cols.ddr_ebi_avg_kBps)  cols.ddr_ebi_avg_MBps =kbToMB(cols.ddr_ebi_avg_kBps);
+  if(cols.ddr_ebi_peak_kBps) cols.ddr_ebi_peak_MBps=kbToMB(cols.ddr_ebi_peak_kBps);
+
+  // 可選：壓測起點（stress_running==1 的第一筆）
+  let stressT=null;
+  if(Array.isArray(cols.stress_running)){
+    const i=cols.stress_running.findIndex(v=>v===1); if(i>=0) stressT=t[i];
+  }
+
+  D={name,cols,t,n,stressT,iso:Array.isArray(cols.iso)?cols.iso:null};
+  view={x0:t[0],x1:t[n-1]>t[0]?t[n-1]:t[0]+1};
+  hoverT=null; hoverChart=null; sel=null; down=null;
+  $('#fname').textContent=name+'  ('+n+' 筆)';
+  $('#drop').classList.add('hidden');
+  $('#view').classList.remove('hidden');
+  build();
+}
+
+/* ---------- helpers ---------- */
+const fmtT=s=>{
+  s=Math.round(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  const p=v=>String(v).padStart(2,'0');
+  return h>0?`${h}:${p(m)}:${p(x)}`:`${m}:${p(x)}`;
+};
+const fmtN=(v,d=1)=>isNaN(v)?'-':(Math.abs(v)>=1000?v.toFixed(0):v.toFixed(d));
+function stats(a){
+  let mn=Infinity,mx=-Infinity,sum=0,c=0;
+  for(const v of a){ if(typeof v!=='number'||isNaN(v)) continue; if(v<mn)mn=v; if(v>mx)mx=v; sum+=v; c++; }
+  return c?{min:mn,max:mx,avg:sum/c}:null;
+}
+const isNumCol=(c,k)=>Array.isArray(c[k])&&c[k].some(v=>typeof v==='number'&&!isNaN(v));
+function lowerBound(arr,x){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(arr[m]<x)lo=m+1;else hi=m;}return lo;}
+function niceStep(range,target){
+  const raw=range/target, p=Math.pow(10,Math.floor(Math.log10(raw))), f=raw/p;
+  return (f<1.5?1:f<3?2:f<7?5:10)*p;
+}
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// 圖例名稱：把欄位名整理成易讀的標籤
+const LABEL={
+  cpu_busy_pct:'CPU 合計', cpu_mhz:'CPU 合計',
+  cpu_max_C:'CPU', gpu_max_C:'GPU', nsp_max_C:'NSP', ddr_max_C:'DDR', tsens_max_C:'TSENS',
+  tmp411_remote_soc_C:'TMP411 遠端SoC', tmp411_local_board_C:'TMP411 本地板'
+};
+function label(n){
+  if(LABEL[n]) return LABEL[n];
+  return n.replace(/^tz_/,'').replace(/-thermal_C$/,'')
+          .replace(/_busy_pct$/,'').replace(/_mhz$/,'').replace(/_C$/,'');
+}
+
+/* ---------- 圖表分組（依 CSV 欄位） ---------- */
+const CORES=[0,1,2,3,4,5,6,7];
+const GROUPS=[
+  {title:'溫度 (°C)｜各 SoC 感測器最高溫', unit:'°C', bold:'cpu_max_C',
+   cols:['cpu_max_C','gpu_max_C','nsp_max_C','ddr_max_C','tsens_max_C','tmp411_remote_soc_C','tmp411_local_board_C']},
+  {title:'熱區溫度 (°C)｜tz_* 全部，預設顯示最熱前 8 條', unit:'°C', toggleAll:true, top:8, tall:true,
+   pattern:/^tz_.*_C$/},
+  {title:'CPU 使用率 (%)', unit:'%', min:0, max:100, bold:'cpu_busy_pct',
+   cols:['cpu_busy_pct',...CORES.map(i=>`cpu${i}_busy_pct`)]},
+  {title:'CPU 頻率 (MHz)', unit:'MHz', bold:'cpu_mhz',
+   cols:['cpu_mhz',...CORES.map(i=>`cpu${i}_mhz`)]},
+  {title:'GPU 使用率 (%)', unit:'%', min:0, max:100, cols:['gpu_busy_pct']},
+  {title:'GPU 頻率 (MHz)', unit:'MHz', cols:['gpu_mhz']},
+  {title:'CDSP 頻率與 MemNoC (MHz)', unit:'MHz', cols:['cdsp_mhz','cdsp1_mhz','cdsp_memnoc_mhz','cdsp1_memnoc_mhz']},
+  {title:'CDSP 延遲 (µs)', unit:'µs', cols:['cdsp_lat_us','cdsp1_lat_us']},
+  {title:'DDR EBI 頻寬 (MB/s)', unit:'MB/s', cols:['ddr_ebi_avg_MBps','ddr_ebi_peak_MBps']},
+  {title:'多媒體 FPS（相機 / VPU / 顯示）', unit:'fps',
+   cols:['cam_fps','vpu_enc_fps','vpu_dec_fps','vpu_dec0_fps','vpu_dec1_fps','vpu_dec2_fps','vpu_dec3_fps','disp_fps']},
+  {title:'多媒體延遲 (ms)', unit:'ms', cols:['cam_latency_ms','vpu_enc_latency_ms','disp_latency_ms']},
+  {title:'掉幀 / 異常累計（次）', unit:'次',
+   cols:['cam_dropped','cam_discont','cam_corrupted','cam_gap','vpu_enc_dropped',
+         'vpu_dec0_dropped','vpu_dec1_dropped','vpu_dec2_dropped','vpu_dec3_dropped','disp_dropped']},
+  {title:'Workload / Procs', unit:'',
+   cols:['cpu_workload_ticks','gpu_workload_activity','npu_workload_activity','npu_procs','ddr_cpu_ticks','disp_cpu_ticks']},
+  {title:'風扇 RPM', unit:'RPM', cols:['fan_rpm']},
+  {title:'風扇 PWM', unit:'', cols:['fan_pwm']},
+  {title:'節流 (throttled)', unit:'', min:0, max:1, cols:['throttled']},
+];
+
+/* ---------- 摘要卡片 ---------- */
+function buildCards(){
+  const c=D.cols, t=D.t, cards=[];
+
+  const diffs=[]; for(let i=1;i<D.n;i++) diffs.push(t[i]-t[i-1]);
+  diffs.sort((a,b)=>a-b);
+  const step=diffs.length?diffs[diffs.length>>1]:0;
+  cards.push(['記錄時間',fmtT(t[D.n-1]),`${D.n} 筆 · 取樣間隔約 ${Math.round(step)} 秒`]);
+
+  // 所有溫度欄位中的最高溫與發生位置
+  let best={v:-Infinity,k:null,i:0};
+  for(const k of Object.keys(c)){
+    if(!k.endsWith('_C')||!isNumCol(c,k)) continue;
+    c[k].forEach((v,i)=>{ if(!isNaN(v)&&v>best.v) best={v,k,i}; });
+  }
+  if(best.k) cards.push(['全域最高溫',best.v.toFixed(1)+' °C',`${label(best.k)} @ ${fmtT(t[best.i])}`]);
+
+  if(isNumCol(c,'cpu_max_C')){const s=stats(c.cpu_max_C); cards.push(['CPU 最高溫',s.max.toFixed(1)+' °C','平均 '+s.avg.toFixed(1)+' °C']);}
+  if(isNumCol(c,'gpu_max_C')){const s=stats(c.gpu_max_C); cards.push(['GPU 最高溫',s.max.toFixed(1)+' °C','平均 '+s.avg.toFixed(1)+' °C']);}
+  if(isNumCol(c,'cpu_busy_pct')){const s=stats(c.cpu_busy_pct); cards.push(['CPU 使用率',s.avg.toFixed(1)+' %','max '+s.max.toFixed(1)+' %']);}
+  if(isNumCol(c,'gpu_busy_pct')){const s=stats(c.gpu_busy_pct); cards.push(['GPU 使用率',s.avg.toFixed(1)+' %','max '+s.max.toFixed(1)+' %']);}
+  if(isNumCol(c,'ddr_ebi_peak_MBps')){
+    const s=stats(c.ddr_ebi_peak_MBps);
+    const a=isNumCol(c,'ddr_ebi_avg_MBps')?'平均 '+stats(c.ddr_ebi_avg_MBps).avg.toFixed(0)+' MB/s':'';
+    cards.push(['DDR 峰值頻寬',s.max.toFixed(0)+' MB/s',a]);
+  }
+  if(isNumCol(c,'fan_rpm')){const s=stats(c.fan_rpm); cards.push(['風扇轉速',s.max.toFixed(0)+' RPM','平均 '+s.avg.toFixed(0)]);}
+  if(isNumCol(c,'throttled')){
+    const k=c.throttled.filter(v=>v===1).length;
+    cards.push(['節流取樣',k+' 筆',`共 ${D.n} 筆`]);
+  }
+
+  $('#cards').innerHTML=cards.map(([k,v,s])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||'&nbsp;'}</div></div>`).join('');
+}
+
+/* ---------- 建立圖表 ---------- */
+function build(){
+  const box=$('#charts'); box.innerHTML=''; charts=[];
+  buildCards();
+  const c=D.cols;
+
+  for(const g of GROUPS){
+    let names=g.cols
+      ? g.cols.filter(k=>isNumCol(c,k))
+      : Object.keys(c).filter(k=>g.pattern.test(k)&&isNumCol(c,k));
+    if(!names.length) continue;
+    if(g.top) names.sort((a,b)=>stats(c[b]).max-stats(c[a]).max);
+
+    const series=names.map((k,i)=>({
+      key:k, name:label(k), data:c[k],
+      hidden:!!g.top && i>=g.top,
+      color:k===g.bold?css('--mark'):`hsl(${Math.round(i*360/names.length)},65%,50%)`,
+      width:k===g.bold?2.4:1.4, st:stats(c[k])
+    }));
+
+    const el=document.createElement('div'); el.className='chart';
+    const tools=g.toggleAll?`<div class="tools"><button class="btn sm" data-act="on">全部顯示</button><button class="btn sm ghost" data-act="off">全部隱藏</button></div>`:'';
+    el.innerHTML=`<div class="chart-head"><h2>${g.title}</h2>${tools}</div><canvas></canvas><div class="legend${g.tall?' tall':''}"></div>`;
+    box.appendChild(el);
+
+    const ch={g,series,canvas:el.querySelector('canvas'),legend:el.querySelector('.legend')};
+    ch.legend.innerHTML=series.map((s,i)=>`<span class="chip${s.hidden?' off':''}" data-i="${i}"><i style="background:${s.color}"></i>${s.name}<small>${fmtN(s.st.min)} / ${fmtN(s.st.avg)} / ${fmtN(s.st.max)}</small></span>`).join('');
+    ch.legend.addEventListener('click',e=>{
+      const chip=e.target.closest('.chip'); if(!chip) return;
+      const s=series[+chip.dataset.i]; s.hidden=!s.hidden;
+      chip.classList.toggle('off',s.hidden); drawAll();
+    });
+    const tb=el.querySelector('.tools');
+    if(tb) tb.addEventListener('click',e=>{
+      const b=e.target.closest('button'); if(!b) return;
+      const off=b.dataset.act==='off';
+      series.forEach(s=>s.hidden=off);
+      ch.legend.querySelectorAll('.chip').forEach(chip=>chip.classList.toggle('off',off));
+      drawAll();
+    });
+
+    attach(ch); charts.push(ch);
+  }
+  drawAll();
+}
+
+/* ---------- 互動 ---------- */
+function pxToT(px){
+  const cv=charts[0].canvas, w=cv.clientWidth-PAD.l-PAD.r;
+  return view.x0+(px-PAD.l)/w*(view.x1-view.x0);
+}
+function attach(ch){
+  const cv=ch.canvas;
+  cv.addEventListener('mousemove',e=>{
+    const px=e.clientX-cv.getBoundingClientRect().left;
+    hoverT=pxToT(px); hoverChart=ch;
+    if(down!==null) sel=[Math.min(down,px),Math.max(down,px)];
+    drawAll();
+  });
+  cv.addEventListener('mouseleave',()=>{hoverT=null;hoverChart=null;drawAll();});
+  cv.addEventListener('mousedown',e=>{
+    e.preventDefault();
+    down=e.clientX-cv.getBoundingClientRect().left; sel=null;
+  });
+  cv.addEventListener('dblclick',resetView);
+}
+// 全域只註冊一次，避免每次載入檔案都累積監聽器
+window.addEventListener('mouseup',()=>{
+  if(down===null) return;
+  if(sel&&sel[1]-sel[0]>6&&charts.length){
+    const a=pxToT(sel[0]), b=pxToT(sel[1]);
+    view={x0:Math.max(D.t[0],a),x1:Math.min(D.t[D.n-1],b)};
+    $('#reset').classList.remove('hidden');
+  }
+  down=null; sel=null; drawAll();
+});
+function resetView(){
+  view={x0:D.t[0],x1:D.t[D.n-1]>D.t[0]?D.t[D.n-1]:D.t[0]+1};
+  $('#reset').classList.add('hidden'); drawAll();
+}
+$('#reset').onclick=resetView;
+
+/* ---------- 繪圖 ---------- */
+function drawAll(){ if(D) charts.forEach(draw); }
+
+function draw(ch){
+  const cv=ch.canvas, dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth, H=cv.clientHeight;
+  if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const M=PAD, pw=W-M.l-M.r, ph=H-M.t-M.b;
+  const t=D.t, i0=Math.max(0,lowerBound(t,view.x0)-1), i1=Math.min(D.n-1,lowerBound(t,view.x1));
+  const colGrid=css('--grid'), colAxis=css('--axis'), colMuted=css('--muted');
+
+  // Y 範圍（僅計算可見時間區間與顯示中的曲線）
+  let ymin=Infinity,ymax=-Infinity;
+  for(const s of ch.series){ if(s.hidden) continue;
+    for(let i=i0;i<=i1;i++){const v=s.data[i]; if(isNaN(v)) continue; if(v<ymin)ymin=v; if(v>ymax)ymax=v;} }
+  if(!isFinite(ymin)){ymin=0;ymax=1;}
+  if(ymax-ymin<1e-9){ymin-=1;ymax+=1;}
+  const pad=(ymax-ymin)*0.06; ymin-=pad; ymax+=pad;
+  if(ch.g.min!==undefined) ymin=ch.g.min;
+  if(ch.g.max!==undefined) ymax=ch.g.max;
+  const X=v=>M.l+(v-view.x0)/(view.x1-view.x0)*pw;
+  const Y=v=>M.t+(1-(v-ymin)/(ymax-ymin))*ph;
+
+  ctx.font='11px system-ui,sans-serif'; ctx.lineWidth=1;
+  // Y 格線
+  const ys=niceStep(ymax-ymin,5);
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(let v=Math.ceil(ymin/ys)*ys; v<=ymax; v+=ys){
+    const y=Math.round(Y(v))+.5;
+    ctx.strokeStyle=colGrid; ctx.beginPath(); ctx.moveTo(M.l,y); ctx.lineTo(W-M.r,y); ctx.stroke();
+    ctx.fillStyle=colMuted; ctx.fillText(+v.toFixed(6)+'',M.l-6,y);
+  }
+  // X 格線
+  const steps=[1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,14400];
+  const span=view.x1-view.x0; const xs=steps.find(s=>span/s<=9)||steps[steps.length-1];
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for(let v=Math.ceil(view.x0/xs)*xs; v<=view.x1; v+=xs){
+    const x=Math.round(X(v))+.5;
+    ctx.strokeStyle=colGrid; ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke();
+    ctx.fillStyle=colMuted; ctx.fillText(fmtT(v),x,M.t+ph+6);
+  }
+  ctx.strokeStyle=colAxis; ctx.strokeRect(M.l+.5,M.t+.5,pw,ph);
+
+  // 曲線（裁切在繪圖區內）
+  ctx.save(); ctx.beginPath(); ctx.rect(M.l,M.t,pw,ph); ctx.clip();
+  if(D.stressT!==null&&D.stressT>=view.x0&&D.stressT<=view.x1){
+    const x=Math.round(X(D.stressT))+.5;
+    ctx.strokeStyle=css('--mark'); ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke(); ctx.setLineDash([]);
+  }
+  const maxPts=pw*2, stride=Math.max(1,Math.floor((i1-i0)/maxPts));
+  for(const s of ch.series){ if(s.hidden) continue;
+    ctx.strokeStyle=s.color; ctx.lineWidth=s.width; ctx.beginPath(); let pen=false;
+    for(let i=i0;i<=i1;i+=stride){
+      const v=s.data[i]; if(isNaN(v)){pen=false;continue;}
+      const x=X(t[i]), y=Y(v);
+      if(pen) ctx.lineTo(x,y); else {ctx.moveTo(x,y);pen=true;}
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 拖曳選取範圍
+  if(sel&&hoverChart===ch){
+    ctx.fillStyle='rgba(37,99,235,.18)'; ctx.fillRect(sel[0],M.t,sel[1]-sel[0],ph);
+  }
+
+  // 游標提示
+  if(hoverT!==null&&hoverT>=view.x0&&hoverT<=view.x1){
+    let k=lowerBound(t,hoverT); if(k>0&&(k>=D.n||hoverT-t[k-1]<t[k]-hoverT)) k--; if(k>=D.n) k=D.n-1;
+    const x=Math.round(X(t[k]))+.5;
+    ctx.strokeStyle=colAxis; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke(); ctx.setLineDash([]);
+    for(const s of ch.series){ if(s.hidden||isNaN(s.data[k])) continue;
+      ctx.fillStyle=s.color; ctx.beginPath(); ctx.arc(x,Y(s.data[k]),3,0,6.3); ctx.fill(); }
+    if(hoverChart===ch&&!sel){
+      const ts=D.iso&&D.iso[k]?String(D.iso[k]).replace('T',' ').replace(/\+.*$/,''):'';
+      const lines=[fmtT(t[k])+(ts?'   '+ts:'')];
+      const vis=ch.series.filter(s=>!s.hidden&&!isNaN(s.data[k]));
+      vis.slice(0,14).forEach(s=>lines.push([s,`${s.name}: ${fmtN(s.data[k],2)} ${ch.g.unit}`]));
+      if(vis.length>14) lines.push('… 其餘 '+(vis.length-14)+' 條');
+      ctx.font='12px system-ui,sans-serif';
+      const wTxt=Math.max(...lines.map(l=>ctx.measureText(typeof l==='string'?l:l[1]).width))+30;
+      const bh=lines.length*17+8; let bx=x+12; if(bx+wTxt>W-4) bx=x-12-wTxt; const by=M.t+4;
+      ctx.fillStyle=css('--tip'); ctx.fillRect(bx,by,wTxt,bh);
+      ctx.textAlign='left'; ctx.textBaseline='middle';
+      lines.forEach((l,i)=>{
+        const y=by+4+i*17+8.5;
+        if(typeof l==='string'){ctx.fillStyle=css('--tiptext');ctx.fillText(l,bx+8,y);}
+        else{ctx.fillStyle=l[0].color;ctx.fillRect(bx+8,y-1.5,10,3);ctx.fillStyle=css('--tiptext');ctx.fillText(l[1],bx+22,y);}
+      });
+    }
+  }
+}
+
+/* ---------- 檔案載入 ---------- */
+function readFile(f){const r=new FileReader();r.onload=()=>load(r.result,f.name);r.readAsText(f);}
+$('#pick').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{if(e.target.files[0])readFile(e.target.files[0]);};
+const drop=$('#drop');
+['dragover','dragenter'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+document.addEventListener('drop',e=>{const f=e.dataTransfer.files[0]; if(f) readFile(f);});
+window.addEventListener('resize',drawAll);
+
+if(EMBEDDED) load(EMBEDDED.text,EMBEDDED.name);
+</script>
+</body>
+</html>
