@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orin NX Monitor Viewer</title>
+<style>
+:root{
+  color-scheme:light;   /* 強制亮色，不跟隨系統深色模式 */
+  --bg:#f6f7f9; --panel:#fff; --text:#1f2937; --muted:#6b7280; --grid:#e5e7eb;
+  --axis:#9ca3af; --accent:#2563eb; --mark:#dc2626; --tip:#111827e6; --tiptext:#f9fafb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI","Microsoft JhengHei",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--grid);position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;font-weight:600}
+#fname{color:var(--muted);font-size:13px}
+.btn{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;font-size:13px;line-height:1.2;transition:background .15s,color .15s,box-shadow .15s,transform .05s}
+.btn:hover{background:#1d4ed8;border-color:#1d4ed8;box-shadow:0 1px 4px rgba(37,99,235,.35)}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn:focus-visible{outline:2px solid #93c5fd;outline-offset:2px}
+.btn.ghost{background:#fff;color:var(--accent);border-color:var(--accent)}
+.btn.ghost:hover{background:#eff6ff;box-shadow:none}
+.btn.sm{padding:3px 11px;font-size:12px;border-radius:5px}
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.tools{display:flex;gap:6px}
+.spacer{flex:1}
+main{padding:16px 20px;max-width:1500px;margin:0 auto}
+#drop{border:2px dashed var(--axis);border-radius:10px;padding:48px;text-align:center;color:var(--muted)}
+#drop.over{border-color:var(--accent);color:var(--accent)}
+#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--panel);border-radius:8px;padding:10px 14px;border:1px solid var(--grid)}
+.card .k{color:var(--muted);font-size:12px}
+.card .v{font-size:20px;font-weight:600;margin-top:2px}
+.card .s{color:var(--muted);font-size:12px}
+.extbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--grid);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:13px}
+.extbar input{width:84px;font:inherit;padding:2px 4px;border:1px solid var(--grid);border-radius:4px}
+.muted{color:var(--muted);font-size:12px}
+.chart{background:var(--panel);border:1px solid var(--grid);border-radius:8px;padding:12px 14px 10px;margin-bottom:14px}
+.chart h2{font-size:14px;margin:0;font-weight:600}
+canvas{width:100%;height:270px;display:block;cursor:crosshair;user-select:none}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;font-size:12px}
+.legend.tall{max-height:150px;overflow:auto}
+.chip{display:flex;align-items:center;gap:5px;cursor:pointer;padding:2px 6px;border-radius:4px;user-select:none}
+.chip:hover{background:var(--bg)}
+.chip.off{opacity:.35;text-decoration:line-through}
+.chip i{width:12px;height:3px;border-radius:2px;display:inline-block}
+.chip small{color:var(--muted)}
+.hint{color:var(--muted);font-size:12px;margin:0 0 10px}
+.hidden{display:none}
+#printinfo{display:none}
+dialog#setdlg{border:1px solid var(--grid);border-radius:10px;padding:0;width:min(560px,94vw);max-height:86vh;color:var(--text)}
+dialog#setdlg::backdrop{background:rgba(17,24,39,.35)}
+.set-head{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--grid)}
+.set-head h3{margin:0;font-size:15px}
+.set-body{padding:6px 16px 12px;overflow:auto;max-height:calc(86vh - 110px)}
+.set-body h4{font-size:13px;margin:14px 0 6px;display:flex;align-items:center;gap:8px}
+.set-body h4 .spacer{flex:1}
+.set-list{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.set-list label,.set-body h4 label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px}
+.set-list.dim{opacity:.4;pointer-events:none}
+.set-foot{display:flex;gap:8px;justify-content:flex-end;padding:10px 16px;border-top:1px solid var(--grid)}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;font-size:12px;padding:0}
+@page{size:A4 landscape;margin:10mm}
+@media print{
+  body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  header{position:static;border:0;padding:0 0 6px}
+  header .btn,#drop,.hint,.tools,#extbar input,#extclear,.extbar .muted{display:none!important}
+  #printinfo{display:block;color:var(--muted);font-size:11px}
+  main{padding:0;max-width:none}
+  #cards{grid-template-columns:repeat(5,1fr);gap:6px}
+  .card{padding:6px 10px;break-inside:avoid}
+  .card .v{font-size:16px}
+  .chart{break-inside:avoid;page-break-inside:avoid;margin-bottom:8px}
+  .legend.tall{max-height:none;overflow:visible}
+  .chip.off{display:none}
+  canvas{cursor:default}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Orin NX Monitor Viewer</h1>
+  <span id="fname"></span>
+  <span class="spacer"></span>
+  <button class="btn ghost hidden" id="reset">重設縮放</button>
+  <span id="printinfo"></span>
+  <button class="btn ghost hidden" id="setbtn">設定</button>
+  <button class="btn ghost hidden" id="pdf">輸出 PDF</button>
+  <button class="btn" id="pick">開啟 CSV</button>
+  <input type="file" id="file" accept=".csv,text/csv" multiple class="hidden">
+</header>
+<main>
+  <div id="drop">把 CSV 檔拖曳到這裡（可一次拖兩個：Orin NX 監控檔 + 電流檔），或點右上角「開啟 CSV」</div>
+  <div id="view" class="hidden">
+    <div id="cards"></div>
+    <div id="extbar" class="extbar hidden">
+      <span>外部電流：<b id="extname"></b></span>
+      <label>時間位移 <input type="number" id="off" step="0.5" value="0"> 秒</label>
+      <span class="muted">兩檔各自從第 1 筆起算為 0 秒；若電流檔比較晚開始，填正值往後移</span>
+      <span class="spacer"></span>
+      <button class="btn sm ghost" id="extclear">移除電流</button>
+    </div>
+    <p class="hint">滑鼠移動查看數值；在圖上按住拖曳可縮放時間範圍（所有圖表同步）；雙擊還原；點圖例可顯示/隱藏曲線；時間軸使用 <code>elapsed_s</code>，提示框顯示 <code>timestamp</code>。電源軌已由 mW 換算為 W；NA 會自動略過，缺少的欄位不會顯示圖表。</p>
+    <div id="charts"></div>
+  </div>
+</main>
+
+<dialog id="setdlg">
+  <div class="set-head"><h3>顯示設定</h3><span class="spacer"></span><button class="linkbtn" id="setreset">還原預設</button></div>
+  <div class="set-body">
+    <h4><label><input type="checkbox" id="set-cards-on"> 最上方總結卡片</label><span class="spacer"></span>
+      <button class="linkbtn" data-all="cards" data-v="1">全選</button><button class="linkbtn" data-all="cards" data-v="0">全不選</button></h4>
+    <div class="set-list" id="set-cards"></div>
+    <h4>圖表<span class="spacer"></span>
+      <button class="linkbtn" data-all="charts" data-v="1">全選</button><button class="linkbtn" data-all="charts" data-v="0">全不選</button></h4>
+    <div class="set-list" id="set-charts"></div>
+  </div>
+  <div class="set-foot"><button class="btn ghost" id="setcancel">取消</button><button class="btn" id="setok">套用</button></div>
+</dialog>
+
+<script>
+const EMBEDDED=/*__EMBEDDED_CSV__*/null;
+
+const $=s=>document.querySelector(s);
+const PAD={l:58,r:14,t:10,b:26};          // 所有圖表共用的繪圖邊界
+let D=null;                               // 主檔（SoC 遙測）
+let E=null;                               // 外部電流檔（Time, Current(A)）
+const SET_KEY='orinViewerSettings';
+let SET={cardsOn:true,hideCards:[],hideCharts:[]};
+try{ Object.assign(SET,JSON.parse(localStorage.getItem(SET_KEY)||'{}')); }catch(e){}
+let CARD_NAMES=[], CHART_NAMES=[];
+let charts=[], view=null, hoverT=null, hoverChart=null, sel=null, down=null;
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[]; let row=[], f='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; }
+      else f+=c;
+    }else if(c==='"') q=true;
+    else if(c===','){row.push(f);f='';}
+    else if(c==='\n'){row.push(f);rows.push(row);row=[];f='';}
+    else if(c!=='\r') f+=c;
+  }
+  if(f!==''||row.length){row.push(f);rows.push(row);}
+  return rows;
+}
+
+// 判斷是否為電流檔（有 Time 與 Current(A) 欄位）
+function isExternal(text){
+  const head=text.slice(0,400);
+  return /Current\(A\)/.test(head) && /Time/.test(head);
+}
+
+// 解析 "11/23/2026 15:58:06:481" 為毫秒（UTC 計算，只用於相對時間）
+function parseStamp(s){
+  const m=String(s).trim().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})(?:[:.](\d{1,3}))?/);
+  if(!m) return NaN;
+  return Date.UTC(+m[3],+m[1]-1,+m[2],+m[4],+m[5],+m[6])+Number(m[7]||0);
+}
+
+/* ---------- 主檔載入與正規化 ---------- */
+function load(text,name){
+  const rows=parseCSV(text).filter(r=>r.length>1);
+  if(rows.length<3){alert('CSV 沒有足夠的資料');return;}
+  const head=rows.shift().map(h=>h.trim());
+  const n=rows.length;
+
+  const cols={};
+  head.forEach((h,j)=>{
+    const vals=rows.map(r=>r[j]===undefined?'':r[j].trim());
+    const num=vals.map(v=>(v===''||v==='NA')?NaN:Number(v));
+    cols[h]=num.some(x=>!isNaN(x))?num:vals;   // 全是文字的欄位保留字串（如 iso、ON/OFF）
+  });
+
+  // 時間軸：elapsed_s 轉為相對秒數（從 0 起算）
+  const t=(Array.isArray(cols.elapsed_s)&&!isNaN(cols.elapsed_s[0]))
+    ? cols.elapsed_s.map(e=>e-cols.elapsed_s[0])
+    : Array.from({length:n},(_,i)=>i);
+
+  // 電源軌：mW → W
+  for(const k of Object.keys(cols)){
+    if(k.endsWith('_mW')&&isNumCol(cols,k)) cols[k.slice(0,-3)+'_W']=cols[k].map(v=>v/1000);
+  }
+  // RAM / Swap 使用率 %
+  if(isNumCol(cols,'ram_used_MB')&&isNumCol(cols,'ram_total_MB'))
+    cols.ram_pct=cols.ram_used_MB.map((v,i)=>v/cols.ram_total_MB[i]*100);
+
+  // timestamp 欄位為文字，「YYYY-MM-DD hh:mm:ss.mmm」（提示用）
+  const ts=Array.isArray(cols.timestamp)?cols.timestamp:null;
+  D={name,cols,t,n,stressT:null,iso:ts};
+  $('#fname').textContent=name+'  ('+n+' 筆)';
+  $('#drop').classList.add('hidden');
+  $('#view').classList.remove('hidden');
+  $('#pdf').classList.remove('hidden');
+  $('#setbtn').classList.remove('hidden');
+  resetView(); syncExtBar(); build();
+}
+
+/* ---------- 電流檔載入（Sweep #, Time, Chan 105 (VDC), Chan 106 (VDC), Current(A), Power(W)） ---------- */
+function loadExternal(text,name){
+  const rows=parseCSV(text).filter(r=>r.length>1);
+  const head=(rows.shift()||[]).map(h=>h.trim());
+  const ti=head.indexOf('Time'), ci=head.indexOf('Current(A)');
+  if(ti<0||ci<0||rows.length<2){alert(`「${name}」格式不符：需要 Time 與 Current(A) 欄位，且至少 2 筆`);return;}
+  // 取出指定欄位為數值陣列；欄位不存在則為 null
+  const col=h=>{const j=head.indexOf(h); return j<0?null:rows.map(r=>Number(String(r[j]||'').trim()));};
+
+  const ms=rows.map(r=>parseStamp(r[ti]));
+  if(ms.some(isNaN)){alert(`「${name}」的 Time 欄位時間格式無法解析`);return;}
+  const m0=ms[0];
+  E={
+    name, n:rows.length,
+    base:ms.map(m=>(m-m0)/1000),                    // 相對第 1 筆的秒數
+    clock:rows.map(r=>r[ti].trim()),                // 原始時間字串（提示用）
+    cur:col('Current(A)'),          // 電流 A
+    pwr:col('Power(W)'),            // 功率 W
+    v105:col('Chan 105 (VDC)'),     // 電壓 V（匯流排電壓）
+    v106:col('Chan 106 (VDC)'),     // Chan 106 原始讀值（分流電阻兩端電壓）
+    offset:0
+  };
+  E.tt=E.base.map(x=>x+E.offset);
+  resetView(); syncExtBar(); build();
+}
+
+// 一次處理多個檔案：主檔先於電流檔，電流檔需要主檔已載入
+function readText(f){
+  return new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsText(f);});
+}
+async function handleFiles(list){
+  const items=await Promise.all([...list].map(async f=>({name:f.name,text:await readText(f)})));
+  items.sort((a,b)=>Number(isExternal(a.text))-Number(isExternal(b.text)));
+  for(const it of items){
+    if(isExternal(it.text)){
+      if(!D){ alert(`請先開啟 SoC 主檔，再加入「${it.name}」`); continue; }
+      loadExternal(it.text,it.name);
+    }else load(it.text,it.name);
+  }
+}
+
+function syncExtBar(){
+  const bar=$('#extbar');
+  if(!E){ bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  $('#extname').textContent=`${E.name}（${E.n} 筆，時長 ${fmtT(E.base[E.n-1])}）`;
+  $('#off').value=E.offset;
+}
+$('#off').addEventListener('change',e=>{
+  if(!E) return;
+  const v=parseFloat(e.target.value);
+  E.offset=isNaN(v)?0:v;
+  E.tt=E.base.map(x=>x+E.offset);
+  resetView(); build();
+});
+$('#extclear').onclick=()=>{ E=null; syncExtBar(); resetView(); build(); };
+
+/* ---------- helpers ---------- */
+const fmtT=s=>{
+  const neg=s<0; s=Math.round(Math.abs(s));
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  const p=v=>String(v).padStart(2,'0');
+  const body=h>0?`${h}:${p(m)}:${p(x)}`:`${m}:${p(x)}`;
+  return (neg?'-':'')+body;
+};
+const fmtN=(v,d=1)=>isNaN(v)?'-':(Math.abs(v)>=1000?v.toFixed(0):v.toFixed(d));
+function stats(a){
+  let mn=Infinity,mx=-Infinity,sum=0,c=0;
+  for(const v of a){ if(typeof v!=='number'||isNaN(v)) continue; if(v<mn)mn=v; if(v>mx)mx=v; sum+=v; c++; }
+  return c?{min:mn,max:mx,avg:sum/c}:null;
+}
+const isNumCol=(c,k)=>Array.isArray(c[k])&&c[k].some(v=>typeof v==='number'&&!isNaN(v));
+function lowerBound(arr,x){let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;if(arr[m]<x)lo=m+1;else hi=m;}return lo;}
+// 最接近 x 的取樣索引
+function nearest(t,x){
+  if(!t.length) return -1;
+  let k=lowerBound(t,x);
+  if(k>0&&(k>=t.length||x-t[k-1]<t[k]-x)) k--;
+  return Math.min(k,t.length-1);
+}
+// 可見時間區間內需要繪製的索引範圍（含左右各一點，讓線段接到邊界）
+function idxRange(t,x0,x1){
+  return [Math.max(0,lowerBound(t,x0)-1), Math.min(t.length-1,lowerBound(t,x1))];
+}
+function niceStep(range,target){
+  const raw=range/target, p=Math.pow(10,Math.floor(Math.log10(raw))), f=raw/p;
+  return (f<1.5?1:f<3?2:f<7?5:10)*p;
+}
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// 圖例名稱
+const LABEL={
+  cpu_avg_pct:'CPU 平均', ram_used_MB:'RAM 使用', swap_used_MB:'Swap 使用', ram_pct:'RAM',
+  VDD_IN_W:'VDD_IN（總輸入）', VDD_CPU_GPU_CV_W:'VDD_CPU_GPU_CV', VDD_SOC_W:'VDD_SOC',
+  total_power_W:'Total Power', total_energy_Wh:'累計能耗', emc_pct:'EMC', emc_MHz:'EMC', gpu_pct:'GPU', gpu_MHz:'GPU'
+};
+function label(n){
+  if(LABEL[n]) return LABEL[n];
+  return n.replace(/^temp_/,'').replace(/_C$/,'').replace(/_pct$/,'').replace(/_MHz$/,'');
+}
+
+/* ---------- 時間範圍（主檔與電流檔可能長度不同） ---------- */
+function extent(){
+  let a=Infinity,b=-Infinity;
+  const arrs=[D.t]; if(E) arrs.push(E.tt);
+  for(const t of arrs){ a=Math.min(a,t[0]); b=Math.max(b,t[t.length-1]); }
+  return [a,b];
+}
+function resetView(){
+  const [a,b]=extent();
+  view={x0:a,x1:b>a?b:a+1};
+  $('#reset').classList.add('hidden');
+  drawAll();
+}
+$('#reset').onclick=resetView;
+
+/* ---------- 外部電流檔的圖表（每個欄位一張圖） ---------- */
+const EXT_SPECS=[
+  {key:'cur',  title:'電流 (A)',              unit:'A', name:'Current',  dec:3, color:'#2563eb'},
+  {key:'pwr',  title:'功率 (W)',              unit:'W', name:'Power',    dec:2, color:'#059669'},
+  {key:'v105', title:'電壓 (V)｜Chan 105',    unit:'V', name:'Chan 105', dec:3, color:'#d97706'},
+  {key:'v106', title:'Chan 106 原始讀值 (V)', unit:'V', name:'Chan 106', dec:5, color:'#7c3aed'},
+];
+
+/* ---------- 圖表分組（依 CSV 欄位） ---------- */
+const CORES=[0,1,2,3,4,5,6,7];
+const GROUPS=[
+  {title:'溫度 (°C)｜temp_* 全部', unit:'°C', bold:'temp_tj_C', toggleAll:true, pattern:/^temp_.*_C$/},
+  {title:'功耗 (W)｜電源軌', unit:'W', bold:'VDD_IN_W', cols:['VDD_IN_W','VDD_CPU_GPU_CV_W','VDD_SOC_W']},
+  {title:'累計能耗 (Wh)', unit:'Wh', cols:['total_energy_Wh']},
+  {title:'CPU 使用率 (%)', unit:'%', min:0, max:100, bold:'cpu_avg_pct', toggleAll:true,
+   cols:['cpu_avg_pct',...CORES.map(i=>`cpu${i}_pct`)]},
+  {title:'CPU 頻率 (MHz)', unit:'MHz', cols:CORES.map(i=>`cpu${i}_MHz`)},
+  {title:'GPU / EMC 使用率 (%)', unit:'%', min:0, max:100, cols:['gpu_pct','emc_pct']},
+  {title:'GPU / EMC 頻率 (MHz)', unit:'MHz', cols:['gpu_MHz','emc_MHz']},
+  {title:'記憶體使用 (MB)', unit:'MB', cols:['ram_used_MB','swap_used_MB']},
+];
+
+/* ---------- 摘要卡片 ---------- */
+function buildCards(){
+  const c=D.cols, t=D.t, cards=[];
+
+  const diffs=[]; for(let i=1;i<D.n;i++) diffs.push(t[i]-t[i-1]);
+  diffs.sort((a,b)=>a-b);
+  const step=diffs.length?diffs[diffs.length>>1]:0;
+  cards.push(['記錄時間',fmtT(t[D.n-1]),`${D.n} 筆 · 取樣間隔約 ${step.toFixed(2)} 秒`]);
+
+  let best={v:-Infinity,k:null,i:0};
+  for(const k of Object.keys(c)){
+    if(!k.endsWith('_C')||!isNumCol(c,k)) continue;
+    c[k].forEach((v,i)=>{ if(!isNaN(v)&&v>best.v) best={v,k,i}; });
+  }
+  if(best.k) cards.push(['全域最高溫',best.v.toFixed(1)+' °C',`${label(best.k)} @ ${fmtT(t[best.i])}`]);
+
+  if(isNumCol(c,'temp_cpu_C')){const s=stats(c.temp_cpu_C); cards.push(['CPU 最高溫',s.max.toFixed(1)+' °C',`${s.min.toFixed(1)} → ${c.temp_cpu_C[D.n-1].toFixed(1)} °C`]);}
+  if(isNumCol(c,'temp_gpu_C')){const s=stats(c.temp_gpu_C); cards.push(['GPU 最高溫',s.max.toFixed(1)+' °C','平均 '+s.avg.toFixed(1)+' °C']);}
+  if(isNumCol(c,'total_power_W')){const s=stats(c.total_power_W); cards.push(['總功耗',s.avg.toFixed(2)+' W',`min ${s.min.toFixed(2)} / max ${s.max.toFixed(2)} W`]);}
+  if(isNumCol(c,'total_energy_Wh')){const s=stats(c.total_energy_Wh); cards.push(['累計能耗',(s.max*1000).toFixed(1)+' mWh','total_energy_Wh 最終值']);}
+  if(isNumCol(c,'cpu_avg_pct')){const s=stats(c.cpu_avg_pct); cards.push(['CPU 使用率',s.avg.toFixed(1)+' %','max '+s.max.toFixed(1)+' %']);}
+  if(isNumCol(c,'gpu_pct')){const s=stats(c.gpu_pct); const f=isNumCol(c,'gpu_MHz')?` · ~${stats(c.gpu_MHz).avg.toFixed(0)} MHz`:''; cards.push(['GPU 使用率',s.avg.toFixed(1)+' %','max '+s.max.toFixed(0)+' %'+f]);}
+  if(isNumCol(c,'emc_pct')){const s=stats(c.emc_pct); const f=isNumCol(c,'emc_MHz')?` · ${stats(c.emc_MHz).max.toFixed(0)} MHz`:''; cards.push(['EMC 使用率',s.avg.toFixed(1)+' %','max '+s.max.toFixed(0)+' %'+f]);}
+  if(isNumCol(c,'ram_used_MB')){const s=stats(c.ram_used_MB); const tot=isNumCol(c,'ram_total_MB')?c.ram_total_MB[0]:NaN;
+    cards.push(['RAM 使用',s.max.toFixed(0)+' MB',isNaN(tot)?'':`共 ${tot} MB（${(s.max/tot*100).toFixed(1)}%）`]);}
+  if(isNumCol(c,'swap_used_MB')){const s=stats(c.swap_used_MB); cards.push(['Swap 使用',s.max.toFixed(0)+' MB',isNumCol(c,'swap_total_MB')?`共 ${c.swap_total_MB[0]} MB`:'']);}
+  if(E){
+    const sc=E.cur&&stats(E.cur);
+    if(sc) cards.push(['外部電流 峰值',sc.max.toFixed(3)+' A',`平均 ${sc.avg.toFixed(3)} A`]);
+    const sp=E.pwr&&stats(E.pwr);
+    if(sp) cards.push(['外部功率 峰值',sp.max.toFixed(2)+' W',`平均 ${sp.avg.toFixed(2)} W`]);
+    const sv=E.v105&&stats(E.v105);
+    if(sv) cards.push(['電壓 (Chan 105)',sv.avg.toFixed(3)+' V',`min ${sv.min.toFixed(3)} / max ${sv.max.toFixed(3)} V`]);
+  }
+
+  CARD_NAMES=cards.map(c=>c[0]);
+  $('#cards').classList.toggle('hidden',!SET.cardsOn);
+  $('#cards').innerHTML=cards.filter(x=>!SET.hideCards.includes(x[0])).map(([k,v,s])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||'&nbsp;'}</div></div>`).join('');
+}
+
+/* ---------- 建立圖表 ---------- */
+function build(){
+  hoverT=null; hoverChart=null;
+  const box=$('#charts'); box.innerHTML=''; charts=[];
+  CHART_NAMES=[];
+  buildCards();
+  const c=D.cols;
+
+  // 外部電流檔（獨立時間軸 E.tt，與主檔共用 x 軸）；欄位缺少或全為 NA 則略過
+  if(E){
+    for(const sp of EXT_SPECS){
+      const data=E[sp.key];
+      const st=data&&stats(data);
+      if(!st) continue;
+      const key='外部：'+sp.title; CHART_NAMES.push(key);
+      if(SET.hideCharts.includes(key)) continue;
+      addChart({title:`${sp.title}｜外部 CSV：${E.name}`, unit:sp.unit},[{
+        key:sp.key, name:sp.name, data, t:E.tt, clock:E.clock, dec:sp.dec,
+        hidden:false, color:sp.color, width:1.6, st
+      }]);
+    }
+  }
+
+  for(const g of GROUPS){
+    const names=g.cols
+      ? g.cols.filter(k=>isNumCol(c,k))
+      : Object.keys(c).filter(k=>g.pattern.test(k)&&isNumCol(c,k));
+    if(!names.length) continue;
+    CHART_NAMES.push(g.title);
+    if(SET.hideCharts.includes(g.title)) continue;
+    if(g.top) names.sort((a,b)=>stats(c[b]).max-stats(c[a]).max);
+
+    const series=names.map((k,i)=>({
+      key:k, name:label(k), data:c[k], t:D.t,
+      hidden:!!g.top && i>=g.top,
+      color:k===g.bold?css('--mark'):`hsl(${Math.round(i*360/names.length)},65%,50%)`,
+      width:k===g.bold?2.4:1.4, st:stats(c[k])
+    }));
+    addChart(g,series);
+  }
+  drawAll();
+}
+
+function addChart(g,series){
+  const box=$('#charts');
+  const el=document.createElement('div'); el.className='chart';
+  const tools=g.toggleAll?`<div class="tools"><button class="btn sm" data-act="on">全部顯示</button><button class="btn sm ghost" data-act="off">全部隱藏</button></div>`:'';
+  el.innerHTML=`<div class="chart-head"><h2>${g.title}</h2>${tools}</div><canvas></canvas><div class="legend${g.tall?' tall':''}"></div>`;
+  box.appendChild(el);
+
+  const ch={g,series,canvas:el.querySelector('canvas'),legend:el.querySelector('.legend')};
+  ch.legend.innerHTML=series.map((s,i)=>`<span class="chip${s.hidden?' off':''}" data-i="${i}"><i style="background:${s.color}"></i>${s.name}<small>${fmtN(s.st.min,s.dec||1)} / ${fmtN(s.st.avg,s.dec||1)} / ${fmtN(s.st.max,s.dec||1)}</small></span>`).join('');
+  ch.legend.addEventListener('click',e=>{
+    const chip=e.target.closest('.chip'); if(!chip) return;
+    const s=series[+chip.dataset.i]; s.hidden=!s.hidden;
+    chip.classList.toggle('off',s.hidden); drawAll();
+  });
+  const tb=el.querySelector('.tools');
+  if(tb) tb.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    const off=b.dataset.act==='off';
+    series.forEach(s=>s.hidden=off);
+    ch.legend.querySelectorAll('.chip').forEach(chip=>chip.classList.toggle('off',off));
+    drawAll();
+  });
+
+  attach(ch); charts.push(ch);
+}
+
+/* ---------- 互動 ---------- */
+function pxToT(px){
+  const cv=charts[0].canvas, w=cv.clientWidth-PAD.l-PAD.r;
+  return view.x0+(px-PAD.l)/w*(view.x1-view.x0);
+}
+function attach(ch){
+  const cv=ch.canvas;
+  cv.addEventListener('mousemove',e=>{
+    const px=e.clientX-cv.getBoundingClientRect().left;
+    hoverT=pxToT(px); hoverChart=ch;
+    if(down!==null) sel=[Math.min(down,px),Math.max(down,px)];
+    drawAll();
+  });
+  cv.addEventListener('mouseleave',()=>{hoverT=null;hoverChart=null;drawAll();});
+  cv.addEventListener('mousedown',e=>{
+    e.preventDefault();
+    down=e.clientX-cv.getBoundingClientRect().left; sel=null;
+  });
+  cv.addEventListener('dblclick',resetView);
+}
+// 全域只註冊一次，避免重複載入時監聽器累積
+window.addEventListener('mouseup',()=>{
+  if(down===null) return;
+  if(sel&&sel[1]-sel[0]>6&&charts.length){
+    const a=pxToT(sel[0]), b=pxToT(sel[1]);
+    const [ext0,ext1]=extent();
+    view={x0:Math.max(ext0,a),x1:Math.min(ext1,b)};
+    $('#reset').classList.remove('hidden');
+  }
+  down=null; sel=null; drawAll();
+});
+
+/* ---------- 繪圖 ---------- */
+function drawAll(){ if(D) charts.forEach(draw); }
+
+function draw(ch){
+  const cv=ch.canvas, dpr=window.devicePixelRatio||1;
+  const W=cv.clientWidth, H=cv.clientHeight;
+  if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);}
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const M=PAD, pw=W-M.l-M.r, ph=H-M.t-M.b;
+  const colGrid=css('--grid'), colAxis=css('--axis'), colMuted=css('--muted');
+
+  // Y 範圍：只看可見時間區間內、顯示中的曲線
+  let ymin=Infinity,ymax=-Infinity;
+  for(const s of ch.series){ if(s.hidden) continue;
+    const [i0,i1]=idxRange(s.t,view.x0,view.x1);
+    for(let i=i0;i<=i1;i++){const v=s.data[i]; if(isNaN(v)) continue; if(v<ymin)ymin=v; if(v>ymax)ymax=v;}
+  }
+  if(!isFinite(ymin)){ymin=0;ymax=1;}
+  if(ymax-ymin<1e-9){ymin-=1;ymax+=1;}
+  const pad=(ymax-ymin)*0.06; ymin-=pad; ymax+=pad;
+  if(ch.g.min!==undefined) ymin=ch.g.min;
+  if(ch.g.max!==undefined) ymax=ch.g.max;
+  const X=v=>M.l+(v-view.x0)/(view.x1-view.x0)*pw;
+  const Y=v=>M.t+(1-(v-ymin)/(ymax-ymin))*ph;
+
+  ctx.font='11px system-ui,sans-serif'; ctx.lineWidth=1;
+  // Y 格線
+  const ys=niceStep(ymax-ymin,5);
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(let v=Math.ceil(ymin/ys)*ys; v<=ymax; v+=ys){
+    const y=Math.round(Y(v))+.5;
+    ctx.strokeStyle=colGrid; ctx.beginPath(); ctx.moveTo(M.l,y); ctx.lineTo(W-M.r,y); ctx.stroke();
+    ctx.fillStyle=colMuted; ctx.fillText(+v.toFixed(6)+'',M.l-6,y);
+  }
+  // X 格線
+  const steps=[1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,14400];
+  const span=view.x1-view.x0; const xs=steps.find(s=>span/s<=9)||steps[steps.length-1];
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for(let v=Math.ceil(view.x0/xs)*xs; v<=view.x1; v+=xs){
+    const x=Math.round(X(v))+.5;
+    ctx.strokeStyle=colGrid; ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke();
+    ctx.fillStyle=colMuted; ctx.fillText(fmtT(v),x,M.t+ph+6);
+  }
+  ctx.strokeStyle=colAxis; ctx.strokeRect(M.l+.5,M.t+.5,pw,ph);
+
+  // 曲線（裁切在繪圖區內；每條曲線用自己的時間軸）
+  ctx.save(); ctx.beginPath(); ctx.rect(M.l,M.t,pw,ph); ctx.clip();
+  if(D.stressT!==null&&D.stressT>=view.x0&&D.stressT<=view.x1){
+    const x=Math.round(X(D.stressT))+.5;
+    ctx.strokeStyle=css('--mark'); ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for(const s of ch.series){ if(s.hidden) continue;
+    const [i0,i1]=idxRange(s.t,view.x0,view.x1);
+    const stride=Math.max(1,Math.floor((i1-i0)/(pw*2)));
+    ctx.strokeStyle=s.color; ctx.lineWidth=s.width; ctx.beginPath(); let pen=false;
+    for(let i=i0;i<=i1;i+=stride){
+      const v=s.data[i]; if(isNaN(v)){pen=false;continue;}
+      const x=X(s.t[i]), y=Y(v);
+      if(pen) ctx.lineTo(x,y); else {ctx.moveTo(x,y);pen=true;}
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 拖曳選取範圍
+  if(sel&&hoverChart===ch){
+    ctx.fillStyle='rgba(37,99,235,.18)'; ctx.fillRect(sel[0],M.t,sel[1]-sel[0],ph);
+  }
+
+  // 游標提示
+  if(hoverT!==null&&hoverT>=view.x0&&hoverT<=view.x1){
+    const x=Math.round(X(hoverT))+.5;
+    ctx.strokeStyle=colAxis; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke(); ctx.setLineDash([]);
+
+    const rows=[];
+    for(const s of ch.series){ if(s.hidden) continue;
+      const k=nearest(s.t,hoverT);
+      if(k<0||isNaN(s.data[k])) continue;
+      rows.push({s,k,v:s.data[k]});
+      ctx.fillStyle=s.color; ctx.beginPath(); ctx.arc(X(s.t[k]),Y(s.data[k]),3,0,6.3); ctx.fill();
+    }
+
+    if(hoverChart===ch&&!sel){
+      const kd=nearest(D.t,hoverT);
+      const ts=(D.iso&&kd>=0&&D.iso[kd])?String(D.iso[kd]).replace('T',' ').replace(/\+.*$/,''):'';
+      const lines=[fmtT(hoverT)+(ts?'   '+ts:'')];
+      rows.slice(0,14).forEach(r=>{
+        const extra=r.s.clock?`  (${r.s.clock[r.k]})`:'';
+        lines.push([r.s,`${r.s.name}: ${fmtN(r.v,r.s.dec||2)} ${ch.g.unit}${extra}`]);
+      });
+      if(rows.length>14) lines.push('… 其餘 '+(rows.length-14)+' 條');
+
+      ctx.font='12px system-ui,sans-serif';
+      const wTxt=Math.max(...lines.map(l=>ctx.measureText(typeof l==='string'?l:l[1]).width))+30;
+      const bh=lines.length*17+8; let bx=x+12; if(bx+wTxt>W-4) bx=x-12-wTxt; const by=M.t+4;
+      ctx.fillStyle=css('--tip'); ctx.fillRect(bx,by,wTxt,bh);
+      ctx.textAlign='left'; ctx.textBaseline='middle';
+      lines.forEach((l,i)=>{
+        const y=by+4+i*17+8.5;
+        if(typeof l==='string'){ctx.fillStyle=css('--tiptext');ctx.fillText(l,bx+8,y);}
+        else{ctx.fillStyle=l[0].color;ctx.fillRect(bx+8,y-1.5,10,3);ctx.fillStyle=css('--tiptext');ctx.fillText(l[1],bx+22,y);}
+      });
+    }
+  }
+}
+
+/* ---------- 檔案載入（可多選、可拖曳） ---------- */
+$('#pick').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{ if(e.target.files.length) handleFiles(e.target.files); e.target.value=''; };
+const drop=$('#drop');
+['dragover','dragenter'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+document.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+window.addEventListener('resize',drawAll);
+
+/* ---------- 顯示設定（存在瀏覽器 localStorage，下次開啟沿用） ---------- */
+function openSettings(){
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const list=(names,hide,cls)=>names.map(n=>`<label><input type="checkbox" class="${cls}" value="${esc(n)}"${hide.includes(n)?'':' checked'}>${esc(n)}</label>`).join('');
+  $('#set-cards-on').checked=SET.cardsOn;
+  $('#set-cards').innerHTML=list(CARD_NAMES,SET.hideCards,'sc');
+  $('#set-charts').innerHTML=list(CHART_NAMES,SET.hideCharts,'sg');
+  $('#set-cards').classList.toggle('dim',!SET.cardsOn);
+  $('#setdlg').showModal();
+}
+$('#setbtn').onclick=openSettings;
+$('#set-cards-on').onchange=e=>$('#set-cards').classList.toggle('dim',!e.target.checked);
+$('#setdlg').addEventListener('click',e=>{
+  const b=e.target.closest('[data-all]'); if(!b) return;
+  $('#set-'+b.dataset.all).querySelectorAll('input').forEach(i=>i.checked=b.dataset.v==='1');
+});
+$('#setcancel').onclick=()=>$('#setdlg').close();
+$('#setreset').onclick=()=>{
+  $('#set-cards-on').checked=true; $('#set-cards').classList.remove('dim');
+  $('#setdlg').querySelectorAll('.set-list input').forEach(i=>i.checked=true);
+};
+$('#setok').onclick=()=>{
+  const off=cls=>[...document.querySelectorAll('.'+cls)].filter(i=>!i.checked).map(i=>i.value);
+  const keep=(old,names)=>old.filter(n=>!names.includes(n));   // 保留本檔未出現項目的設定
+  SET={cardsOn:$('#set-cards-on').checked,
+       hideCards:[...keep(SET.hideCards,CARD_NAMES),...off('sc')],
+       hideCharts:[...keep(SET.hideCharts,CHART_NAMES),...off('sg')]};
+  try{localStorage.setItem(SET_KEY,JSON.stringify(SET));}catch(e){}
+  $('#setdlg').close(); build();
+};
+
+/* ---------- 輸出 PDF（瀏覽器列印 → 另存為 PDF） ---------- */
+// 列印時：清除游標提示、以高解析度重繪，讓 PDF 內圖表清晰；只輸出目前的縮放範圍與顯示中的曲線
+let printing=false;
+const _dpr=Object.getOwnPropertyDescriptor(window,'devicePixelRatio');
+function beforePrint(){
+  if(!D||printing) return; printing=true;
+  hoverT=null; hoverChart=null; sel=null;
+  const t0=D.iso&&D.iso[0]?D.iso[0]:'', t1=D.iso&&D.iso[D.n-1]?D.iso[D.n-1]:'';
+  $('#printinfo').textContent=`範圍 ${fmtT(view.x0)} – ${fmtT(view.x1)}${t0?`　｜　${t0} ~ ${t1}`:''}　｜　輸出於 ${new Date().toLocaleString()}`;
+  Object.defineProperty(window,'devicePixelRatio',{configurable:true,get:()=>3});
+  drawAll();
+}
+function afterPrint(){
+  if(!printing) return; printing=false;
+  if(_dpr) Object.defineProperty(window,'devicePixelRatio',_dpr); else delete window.devicePixelRatio;
+  drawAll();
+}
+window.addEventListener('beforeprint',beforePrint);
+window.addEventListener('afterprint',afterPrint);
+$('#pdf').onclick=()=>{
+  const old=document.title;
+  document.title=(D.name||'report').replace(/\.csv$/i,'')+'_report';   // 預設 PDF 檔名
+  beforePrint(); window.print(); afterPrint();
+  document.title=old;
+};
+
+if(EMBEDDED) load(EMBEDDED.text,EMBEDDED.name);
+</script>
+</body>
+</html>
