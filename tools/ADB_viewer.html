@@ -97,6 +97,9 @@ dialog#setdlg::backdrop{background:rgba(17,24,39,.35)}
     <div id="extbar" class="extbar hidden">
       <span>外部電流：<b id="extname"></b></span>
       <label>時間位移 <input type="number" id="off" step="0.5" value="0"> 秒</label>
+      <span id="fbox">｜ 電壓 <select id="vch"></select>
+        分流 <select id="sch"></select> ÷ <input type="number" id="ohm" step="0.001" min="0" value="0.01"> Ω
+        <span class="muted">Current = 分流 ÷ Ω，Power = 電壓 × Current</span></span>
       <span class="muted">兩檔各自從第 1 筆起算為 0 秒；若電流檔比較晚開始，填正值往後移</span>
       <span class="spacer"></span>
       <button class="btn sm ghost" id="extclear">移除電流</button>
@@ -153,7 +156,7 @@ function parseCSV(text){
 // 判斷是否為電流檔（有 Time 與 Current(A) 欄位）
 function isExternal(text){
   const head=text.slice(0,400);
-  return /Current\(A\)/.test(head) && /Time/.test(head);
+  return /Time/.test(head) && (/Current\(A\)/.test(head) || /Chan \d+ \(VDC\)/.test(head));
 }
 
 // 解析 "11/23/2026 15:58:06:481" 為毫秒（UTC 計算，只用於相對時間）
@@ -241,8 +244,10 @@ function load(text,name){
 function loadExternal(text,name){
   const rows=parseCSV(text).filter(r=>r.length>1);
   const head=(rows.shift()||[]).map(h=>h.trim());
-  const ti=head.indexOf('Time'), ci=head.indexOf('Current(A)');
-  if(ti<0||ci<0||rows.length<2){alert(`「${name}」格式不符：需要 Time 與 Current(A) 欄位，且至少 2 筆`);return;}
+  const ti=head.indexOf('Time');
+  const chNames=head.filter(h=>/^Chan \d+ \(VDC\)$/.test(h));
+  if(ti<0||rows.length<2||(head.indexOf('Current(A)')<0&&chNames.length<2)){
+    alert(`「${name}」格式不符：需要 Time 欄位，以及 Current(A) 或至少兩個 Chan 欄位，且至少 2 筆`);return;}
   // 取出指定欄位為數值陣列；欄位不存在則為 null
   const col=h=>{const j=head.indexOf(h); return j<0?null:rows.map(r=>Number(String(r[j]||'').trim()));};
 
@@ -253,14 +258,33 @@ function loadExternal(text,name){
     name, n:rows.length,
     base:ms.map(m=>(m-m0)/1000),                    // 相對第 1 筆的秒數
     clock:rows.map(r=>r[ti].trim()),                // 原始時間字串（提示用）
-    cur:col('Current(A)'),          // 電流 A
-    pwr:col('Power(W)'),            // 功率 W
-    v105:col('Chan 105 (VDC)'),     // 電壓 V（匯流排電壓）
-    v106:col('Chan 106 (VDC)'),     // Chan 106 原始讀值（分流電阻兩端電壓）
+    fileCur:col('Current(A)'),      // 檔案內建的電流 A（若有）
+    filePwr:col('Power(W)'),        // 檔案內建的功率 W（若有）
+    chans:Object.fromEntries(chNames.map(h=>[h,col(h)])),
+    chNames,
     offset:0
   };
+  // 公式設定：沿用上次（存在 localStorage），預設 Chan 105 = 電壓、Chan 106 = 分流電壓、0.01 Ω
+  const pick=(want,fb)=>chNames.includes(want)?want:fb;
+  E.vCh=pick(E_CFG.vCh,pick('Chan 105 (VDC)',chNames[0]));
+  E.sCh=pick(E_CFG.sCh,pick('Chan 106 (VDC)',chNames[1]));
+  E.ohm=E_CFG.ohm>0?E_CFG.ohm:0.01;
+  calcExternal();
   E.tt=E.base.map(x=>x+E.offset);
   resetView(); syncExtBar(); build();
+}
+
+// Current(A) = 分流 Chan ÷ 電阻；Power(W) = 電壓 Chan × Current。沒有兩個 Chan 時改用檔案內建欄位
+let E_CFG={vCh:'Chan 105 (VDC)',sCh:'Chan 106 (VDC)',ohm:0.01};
+try{ Object.assign(E_CFG,JSON.parse(localStorage.getItem('socViewerExtCfg')||'{}')); }catch(e){}
+function calcExternal(){
+  const v=E.chans[E.vCh], s=E.chans[E.sCh];
+  E.formula=!!(v&&s&&E.ohm>0);
+  if(E.formula){
+    E.cur=s.map(x=>x/E.ohm);
+    E.pwr=v.map((x,i)=>x*E.cur[i]);
+  }else{ E.cur=E.fileCur; E.pwr=E.filePwr; }
+  E.vbus=v||null; E.vsh=s||null;
 }
 
 // 一次處理多個檔案：主檔先於電流檔，電流檔需要主檔已載入
@@ -284,7 +308,19 @@ function syncExtBar(){
   bar.classList.remove('hidden');
   $('#extname').textContent=`${E.name}（${E.n} 筆，時長 ${fmtT(E.base[E.n-1])}）`;
   $('#off').value=E.offset;
+  const opts=sel=>E.chNames.map(h=>`<option${h===sel?' selected':''}>${h}</option>`).join('');
+  $('#vch').innerHTML=opts(E.vCh); $('#sch').innerHTML=opts(E.sCh); $('#ohm').value=E.ohm;
+  $('#fbox').classList.toggle('hidden',E.chNames.length<2);
 }
+function onFormula(){
+  if(!E) return;
+  E.vCh=$('#vch').value; E.sCh=$('#sch').value;
+  const o=parseFloat($('#ohm').value); if(o>0) E.ohm=o; else $('#ohm').value=E.ohm;
+  E_CFG={vCh:E.vCh,sCh:E.sCh,ohm:E.ohm};
+  try{localStorage.setItem('socViewerExtCfg',JSON.stringify(E_CFG));}catch(e){}
+  calcExternal(); build();
+}
+['#vch','#sch','#ohm'].forEach(s=>$(s).addEventListener('change',onFormula));
 $('#off').addEventListener('change',e=>{
   if(!E) return;
   const v=parseFloat(e.target.value);
@@ -359,8 +395,8 @@ $('#reset').onclick=resetView;
 const EXT_SPECS=[
   {key:'cur',  title:'電流 (A)',              unit:'A', name:'Current',  dec:3, color:'#2563eb'},
   {key:'pwr',  title:'功率 (W)',              unit:'W', name:'Power',    dec:2, color:'#059669'},
-  {key:'v105', title:'電壓 (V)｜Chan 105',    unit:'V', name:'Chan 105', dec:3, color:'#d97706'},
-  {key:'v106', title:'Chan 106 原始讀值 (V)', unit:'V', name:'Chan 106', dec:5, color:'#7c3aed'},
+  {key:'vbus', title:'電壓 (V)',              unit:'V', name:'電壓',     dec:3, color:'#d97706', ch:'vCh'},
+  {key:'vsh',  title:'分流電阻電壓 (V)',      unit:'V', name:'分流',     dec:5, color:'#7c3aed', ch:'sCh'},
 ];
 
 /* ---------- 圖表分組（依 CSV 欄位） ---------- */
@@ -430,8 +466,8 @@ function buildCards(){
     if(sc) cards.push(['外部電流 峰值',sc.max.toFixed(3)+' A',`平均 ${sc.avg.toFixed(3)} A`]);
     const sp=E.pwr&&stats(E.pwr);
     if(sp) cards.push(['外部功率 峰值',sp.max.toFixed(2)+' W',`平均 ${sp.avg.toFixed(2)} W`]);
-    const sv=E.v105&&stats(E.v105);
-    if(sv) cards.push(['電壓 (Chan 105)',sv.avg.toFixed(3)+' V',`min ${sv.min.toFixed(3)} / max ${sv.max.toFixed(3)} V`]);
+    const sv=E.vbus&&stats(E.vbus);
+    if(sv) cards.push([`電壓 (${E.vCh.replace(' (VDC)','')})`,sv.avg.toFixed(3)+' V',`min ${sv.min.toFixed(3)} / max ${sv.max.toFixed(3)} V`]);
   }
 
   CARD_NAMES=cards.map(c=>c[0]);
@@ -455,8 +491,11 @@ function build(){
       if(!st) continue;
       const key='外部：'+sp.title; CHART_NAMES.push(key);
       if(SET.hideCharts.includes(key)) continue;
-      addChart({title:`${sp.title}｜外部 CSV：${E.name}`, unit:sp.unit},[{
-        key:sp.key, name:sp.name, data, t:E.tt, clock:E.clock, dec:sp.dec,
+      const chn=sp.ch&&E[sp.ch]?E[sp.ch].replace(' (VDC)',''):'';
+      const how=(sp.key==='cur'||sp.key==='pwr')&&E.formula
+        ? (sp.key==='cur'?`＝${E.sCh.replace(' (VDC)','')} ÷ ${E.ohm} Ω`:`＝${E.vCh.replace(' (VDC)','')} × Current`):'';
+      addChart({title:`${sp.title}${chn?'｜'+chn:''}${how?'｜'+how:''}｜外部 CSV：${E.name}`, unit:sp.unit},[{
+        key:sp.key, name:chn||sp.name, data, t:E.tt, clock:E.clock, dec:sp.dec,
         hidden:false, color:sp.color, width:1.6, st
       }]);
     }
