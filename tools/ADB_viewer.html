@@ -387,6 +387,7 @@ function resetView(){
   const [a,b]=extent();
   view={x0:a,x1:b>a?b:a+1};
   $('#reset').classList.add('hidden');
+  if(D) buildCards();
   drawAll();
 }
 $('#reset').onclick=resetView;
@@ -433,12 +434,22 @@ const GROUPS=[
 
 /* ---------- 摘要卡片 ---------- */
 function buildCards(){
-  const c=D.cols, t=D.t, cards=[];
+  // 只統計目前縮放範圍內的資料
+  const inView=tt=>{ let a=lowerBound(tt,view.x0), b=lowerBound(tt,view.x1+1e-9)-1; return [a,b]; };
+  const [i0,i1]=inView(D.t);
+  const c={}; for(const k of Object.keys(D.cols)) c[k]=D.cols[k].slice(i0,i1+1);
+  const t=D.t.slice(i0,i1+1), N=t.length, cards=[];
+  let EV=null;
+  if(E){ const [e0,e1]=inView(E.tt); const sl=a=>a?a.slice(e0,e1+1):null;
+    EV={cur:sl(E.cur),pwr:sl(E.pwr),vbus:sl(E.vbus),vCh:E.vCh}; }
+  const zoomed=$('#reset')&&!$('#reset').classList.contains('hidden');
 
-  const diffs=[]; for(let i=1;i<D.n;i++) diffs.push(t[i]-t[i-1]);
+  const diffs=[]; for(let i=1;i<N;i++) diffs.push(t[i]-t[i-1]);
   diffs.sort((a,b)=>a-b);
   const step=diffs.length?diffs[diffs.length>>1]:0;
-  cards.push(['主檔記錄時間',fmtT(t[D.n-1]),`${D.n} 筆 · 取樣間隔約 ${Math.round(step)} 秒`]);
+  if(N) cards.push(['主檔記錄時間',
+    zoomed?`${fmtT(t[0])} – ${fmtT(t[N-1])}`:fmtT(t[N-1]),
+    `${N} 筆 · 取樣間隔約 ${Math.round(step)} 秒`]);
 
   let best={v:-Infinity,k:null,i:0};
   for(const k of Object.keys(c)){
@@ -459,9 +470,10 @@ function buildCards(){
   if(isNumCol(c,'fan_rpm')){const s=stats(c.fan_rpm); cards.push(['風扇轉速',s.max.toFixed(0)+' RPM','平均 '+s.avg.toFixed(0)]);}
   if(isNumCol(c,'throttled')){
     const k=c.throttled.filter(v=>v===1).length;
-    cards.push(['節流取樣',k+' 筆',`共 ${D.n} 筆`]);
+    cards.push(['節流取樣',k+' 筆',`共 ${N} 筆`]);
   }
-  if(E){
+  if(EV){
+    const E=EV;
     const sc=E.cur&&stats(E.cur);
     if(sc) cards.push(['外部電流 峰值',sc.max.toFixed(3)+' A',`平均 ${sc.avg.toFixed(3)} A`]);
     const sp=E.pwr&&stats(E.pwr);
@@ -492,9 +504,7 @@ function build(){
       const key='外部：'+sp.title; CHART_NAMES.push(key);
       if(SET.hideCharts.includes(key)) continue;
       const chn=sp.ch&&E[sp.ch]?E[sp.ch].replace(' (VDC)',''):'';
-      const how=(sp.key==='cur'||sp.key==='pwr')&&E.formula
-        ? (sp.key==='cur'?`＝${E.sCh.replace(' (VDC)','')} ÷ ${E.ohm} Ω`:`＝${E.vCh.replace(' (VDC)','')} × Current`):'';
-      addChart({title:`${sp.title}${chn?'｜'+chn:''}${how?'｜'+how:''}｜外部 CSV：${E.name}`, unit:sp.unit},[{
+      addChart({title:sp.title, unit:sp.unit},[{
         key:sp.key, name:chn||sp.name, data, t:E.tt, clock:E.clock, dec:sp.dec,
         hidden:false, color:sp.color, width:1.6, st
       }]);
@@ -525,7 +535,7 @@ function addChart(g,series){
   const box=$('#charts');
   const el=document.createElement('div'); el.className='chart';
   const tools=g.toggleAll?`<div class="tools"><button class="btn sm" data-act="on">全部顯示</button><button class="btn sm ghost" data-act="off">全部隱藏</button></div>`:'';
-  el.innerHTML=`<div class="chart-head"><h2>${g.title}</h2>${tools}</div><canvas></canvas><div class="legend${g.tall?' tall':''}"></div>`;
+  el.innerHTML=`<div class="chart-head"><h2>${g.title.split('｜')[0]}</h2>${tools}</div><canvas></canvas><div class="legend${g.tall?' tall':''}"></div>`;
   box.appendChild(el);
 
   const ch={g,series,canvas:el.querySelector('canvas'),legend:el.querySelector('.legend')};
@@ -575,6 +585,7 @@ window.addEventListener('mouseup',()=>{
     const [ext0,ext1]=extent();
     view={x0:Math.max(ext0,a),x1:Math.min(ext1,b)};
     $('#reset').classList.remove('hidden');
+    buildCards();
   }
   down=null; sel=null; drawAll();
 });
